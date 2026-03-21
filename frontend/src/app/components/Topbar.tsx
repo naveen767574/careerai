@@ -69,7 +69,7 @@ export function Topbar() {
     : 'U';
 
   return (
-    <div className="h-20 glass-card border-b border-white/10 flex items-center justify-between px-8 relative z-10">
+    <div className="h-20 glass-card border-b border-white/10 flex items-center justify-between px-8" style={{ position: 'relative', zIndex: 99999 }}>
       {/* Search */}
       <div className="flex-1 max-w-xl">
         <div className="relative">
@@ -110,7 +110,18 @@ export function Topbar() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 10 }}
-                className="absolute right-0 top-12 w-80 z-50 rounded-xl shadow-xl border border-white/10 bg-gray-900/95 backdrop-blur-xl overflow-hidden"
+                style={{
+                  position: 'fixed',
+                  top: '60px',
+                  right: '16px',
+                  width: '320px',
+                  zIndex: 99999,
+                  background: 'rgba(10,10,25,0.98)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '12px',
+                  boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+                  backdropFilter: 'blur(20px)',
+                }}
               >
                 <div className="flex items-center justify-between p-4 border-b border-white/10">
                   <h3 className="font-semibold text-sm">Notifications</h3>
@@ -118,14 +129,14 @@ export function Topbar() {
                     Mark all read
                   </button>
                 </div>
-                <div className="max-h-80 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                <div className="max-h-72 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                   {notifications.length === 0 ? (
                     <p className="text-center text-white/40 text-sm py-8">No notifications</p>
                   ) : (
                     notifications.slice(0, 10).map((n: any) => (
                       <div key={n.id} className={`p-4 border-b border-white/5 hover:bg-white/5 transition-colors ${!n.is_read ? 'bg-blue-500/5' : ''}`}>
                         <p className="text-sm font-medium">{n.title}</p>
-                        <p className="text-xs text-white/60 mt-1">{n.message}</p>
+                        <p className="text-xs text-white/60 mt-1 line-clamp-2">{n.message}</p>
                       </div>
                     ))
                   )}
@@ -179,6 +190,12 @@ export function Topbar() {
     </div>
   );
 }
+
+
+
+
+
+
 
 
 

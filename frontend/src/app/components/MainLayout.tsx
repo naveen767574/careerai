@@ -19,7 +19,7 @@ export function MainLayout() {
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Topbar />
-        <main className="flex-1 overflow-y-auto p-8 relative">
+        <main className="flex-1 overflow-y-auto p-8" style={{ position: 'relative', zIndex: 1 }}>
           <Outlet />
         </main>
       </div>
@@ -27,3 +27,5 @@ export function MainLayout() {
     </div>
   );
 }
+
+

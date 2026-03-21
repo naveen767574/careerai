@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../lib/api';
 import { internshipService, applicationService, recommendationService } from '../lib/services';
 import { GlassCard } from '../components/GlassCard';
@@ -28,19 +28,37 @@ const sourceLogoMap: Record<string, string> = {
 };
 
 const Internships = () => {
-  const [internships, setInternships] = useState<any[]>([]);
+  const [internships, setInternships] = useState<any[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_internships');
+      return cached ? JSON.parse(cached) : [];
+    } catch { return []; }
+  });
   const [filteredInternships, setFilteredInternships] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+  const cached = localStorage.getItem('cached_internships');
+  return !cached; // Only show loading if no cache
+});
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState('');
   const [search, setSearch] = useState('');
   const [searchSuggestions, setSearchSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [totalCount, setTotalCount] = useState(0);
+  const [totalCount, setTotalCount] = useState<number>(() => {
+    try {
+      const cached = localStorage.getItem('cached_total');
+      return cached ? parseInt(cached) : 0;
+    } catch { return 0; }
+  });
   const [totalPages, setTotalPages] = useState(1);
   const [page, setPage] = useState(1);
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [bookmarked, setBookmarked] = useState<number[]>([]);
+  const [bookmarked, setBookmarked] = useState<number[]>(() => {
+    try {
+      const saved = localStorage.getItem('bookmarked_internships');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [showFilters, setShowFilters] = useState(false);
   const [scraping, setScraping] = useState(false);
   const [locationFilter, setLocationFilter] = useState('');
@@ -106,7 +124,7 @@ const Internships = () => {
   };
 
   const loadInternships = async (append = false, searchQuery = '') => {
-    setLoading(true);
+    if (internships.length === 0) setLoading(true);
     try {
       const data = await internshipService.getAll({ page, limit: 20, search: searchQuery });
       const items = data.internships || data.items || data || [];
@@ -134,11 +152,14 @@ const Internships = () => {
           ? item.description.split(' ').filter((w: string) => w.length > 5).slice(0, 3)
           : [],
         url: item.application_url || '#',
-      }));
-
+      }));      if (!append) {
+        localStorage.setItem('cached_internships', JSON.stringify(mapped));
+        localStorage.setItem('cached_total', String(data.total || items.length));
+      }
       setInternships(prev => append ? [...prev, ...mapped] : mapped);
       setTotalCount(data.total || items.length);
       setTotalPages(data.pages || 1);
+
 
       try {
         const recData = await recommendationService.get();
@@ -393,7 +414,7 @@ const Internships = () => {
                       <Briefcase className="w-4 h-4 text-white/40" />
                       <div>
                         <p className="text-sm font-medium">{s.position}</p>
-                        <p className="text-xs text-white/60">{s.company} • {s.location}</p>
+                        <p className="text-xs text-white/60">{s.company} � {s.location}</p>
                       </div>
                     </button>
                   ))}
@@ -549,23 +570,23 @@ const Internships = () => {
               onClick={() => handleExplain(internship.id)}
               className="w-full mt-2 text-xs text-blue-400 hover:text-blue-300 flex items-center justify-center gap-1 py-1"
             >
-              {loadingExplain[internship.id] ? '✨ Analyzing...' : expandedExplain[internship.id] ? '▲ Hide explanation' : '✨ Why this matches you?'}
+              {loadingExplain[internship.id] ? '? Analyzing...' : expandedExplain[internship.id] ? '? Hide explanation' : '? Why this matches you?'}
             </button>
             {expandedExplain[internship.id] && explanations[internship.id] && (
               <div className="mt-2 p-3 bg-white/5 rounded-xl text-xs space-y-2">
                 {explanations[internship.id].match_reasons?.length > 0 && (
                   <div>
-                    <p className="text-green-400 font-medium mb-1">✅ Why it matches:</p>
+                    <p className="text-green-400 font-medium mb-1">? Why it matches:</p>
                     <ul className="space-y-1">
                       {explanations[internship.id].match_reasons.map((r: string, i: number) => (
-                        <li key={i} className="text-white/70">• {r}</li>
+                        <li key={i} className="text-white/70">� {r}</li>
                       ))}
                     </ul>
                   </div>
                 )}
                 {explanations[internship.id].missing_skills?.length > 0 && (
                   <div>
-                    <p className="text-orange-400 font-medium mb-1">📚 Skills to learn:</p>
+                    <p className="text-orange-400 font-medium mb-1">?? Skills to learn:</p>
                     <div className="flex flex-wrap gap-1">
                       {explanations[internship.id].missing_skills.map((s: string, i: number) => (
                         <span key={i} className="px-2 py-0.5 bg-orange-500/20 text-orange-300 rounded">{s}</span>
@@ -574,7 +595,7 @@ const Internships = () => {
                   </div>
                 )}
                 {explanations[internship.id].tip && (
-                  <p className="text-purple-300 italic">💡 {explanations[internship.id].tip}</p>
+                  <p className="text-purple-300 italic">?? {explanations[internship.id].tip}</p>
                 )}
               </div>
             )}
@@ -608,6 +629,16 @@ const Internships = () => {
 }
 
 export { Internships };
+
+
+
+
+
+
+
+
+
+
 
 
 
