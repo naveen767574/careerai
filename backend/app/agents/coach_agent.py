@@ -23,20 +23,20 @@ class CoachingBrief:
 
 
 COACH_BRIEF_PROMPT = """
-You are a proactive career coach. Generate a short coaching brief (3-5 bullet points)
-for this user based on their current career situation.
+You are a career coach. Generate exactly 3 short nudges for this user.
 
 Context:
 - Days since last application: {days_inactive}
-- Top new job matches this week: {top_matches_summary}
-- Rising skill this week: {top_rising_skill}
+- Top job match: {top_matches_summary}
+- Rising skill: {top_rising_skill}
 - Resume score: {resume_score}/100
-- Career path alignment: {path_alignment}
-- Analyst insight: {analyst_insight}
 
-Be specific, actionable, and encouraging. Reference actual job titles and skill names.
-Do NOT be generic. Each nudge should reference real data from the context above.
-Respond as a JSON array of strings: ["nudge 1", "nudge 2", "nudge 3"]
+Rules:
+- Each nudge must be under 15 words
+- Be specific and actionable
+- No long sentences
+
+Respond ONLY as JSON array: ["nudge 1", "nudge 2", "nudge 3"]
 """
 
 
@@ -132,7 +132,7 @@ class CoachAgent:
             response = self.client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=400,
+                max_tokens=150,
             )
             content = response.choices[0].message.content
             data = json.loads(content)
@@ -141,3 +141,5 @@ class CoachAgent:
         except Exception:
             pass
         return ["Keep applying to new listings.", "Review your top skill matches."]
+
+
