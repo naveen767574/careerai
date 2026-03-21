@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  body { font-family: "Arial", sans-serif; font-size: 10.5pt; color: #1F2937; margin: 36px; line-height: 1.4; }
+  h1 { font-size: 20pt; margin-bottom: 4px; }
+  .contact { font-size: 9.5pt; color: #4B5563; margin-bottom: 10px; }
+  h2 { font-size: 11pt; text-transform: uppercase; letter-spacing: 0.8px; margin-top: 14px; border-bottom: 1px solid #D1D5DB; padding-bottom: 2px; }
+  .skills { font-family: "Courier New", monospace; font-size: 9.5pt; background: #F9FAFB; padding: 8px; border: 1px solid #E5E7EB; }
+  ul { margin: 4px 0; padding-left: 16px; }
+  li { margin-bottom: 2px; }
+</style>
+</head>
+<body>
+  <h1>{{ resume_data.get('name', 'Your Name') }}</h1>
+  <div class="contact">
+    {{ resume_data.get('email', '') }}
+    {% if resume_data.get('phone') %} | {{ resume_data.phone }}{% endif %}
+    {% if resume_data.get('linkedin') %} | {{ resume_data.linkedin }}{% endif %}
+    {% if resume_data.get('portfolio') %} | {{ resume_data.portfolio }}{% endif %}
+  </div>
+
+  {% if resume_data.get('skills') %}
+  <h2>Skills</h2>
+  <div class="skills">{{ resume_data.skills | join(' | ') }}</div>
+  {% endif %}
+
+  {% if resume_data.get('experience') %}
+  <h2>Experience</h2>
+  <ul>
+  {% for exp in resume_data.experience %}
+  <li>{{ exp }}</li>
+  {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if resume_data.get('projects') %}
+  <h2>Projects</h2>
+  <ul>
+  {% for proj in resume_data.projects %}
+  <li>{{ proj }}</li>
+  {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if resume_data.get('education') %}
+  <h2>Education</h2>
+  {% for edu in resume_data.education %}
+  <p>{{ edu }}</p>
+  {% endfor %}
+  {% endif %}
+
+  {% if resume_data.get('certifications') %}
+  <h2>Certifications</h2>
+  <ul>
+  {% for cert in resume_data.certifications %}
+  <li>{{ cert }}</li>
+  {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if resume_data.get('achievements') %}
+  <h2>Achievements</h2>
+  <ul>
+  {% for ach in resume_data.achievements %}
+  <li>{{ ach }}</li>
+  {% endfor %}
+  </ul>
+  {% endif %}
+</body>
+</html>

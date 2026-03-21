@@ -1,0 +1,59 @@
+# ============================================
+# BACKEND .gitignore
+# ============================================
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Distribution
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Logs
+*.log
+logs/
+
+# Database migrations (keep only versions folder)
+# alembic/versions/*.pyc
+
+# ML model cache (auto-downloaded on first run)
+.cache/
+huggingface/
+*.bin
+*.safetensors
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads (user data)
+uploads/
+temp/

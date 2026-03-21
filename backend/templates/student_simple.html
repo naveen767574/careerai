@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  body { font-family: "Calibri", "Arial", sans-serif; font-size: 11pt; color: #2D3748; margin: 48px; line-height: 1.6; }
+  h1 { font-size: 26pt; margin-bottom: 6px; }
+  .contact { font-size: 10pt; color: #718096; margin-bottom: 18px; }
+  h2 { font-size: 12pt; color: #4A5568; margin-top: 20px; border-bottom: 1px solid #E2E8F0; padding-bottom: 3px; }
+  ul { margin: 6px 0; padding-left: 18px; }
+  li { margin-bottom: 4px; }
+</style>
+</head>
+<body>
+  <h1>{{ resume_data.get('name', 'Your Name') }}</h1>
+  <div class="contact">
+    {{ resume_data.get('email', '') }}
+    {% if resume_data.get('phone') %} | {{ resume_data.phone }}{% endif %}
+    {% if resume_data.get('linkedin') %} | {{ resume_data.linkedin }}{% endif %}
+    {% if resume_data.get('portfolio') %} | {{ resume_data.portfolio }}{% endif %}
+  </div>
+
+  {% if resume_data.get('skills') %}
+  <h2>Skills</h2>
+  <p>{{ resume_data.skills | join(', ') }}</p>
+  {% endif %}
+
+  {% if resume_data.get('education') %}
+  <h2>Education</h2>
+  {% for edu in resume_data.education %}
+  <p>{{ edu }}</p>
+  {% endfor %}
+  {% endif %}
+
+  {% if resume_data.get('experience') %}
+  <h2>Experience</h2>
+  <ul>
+  {% for exp in resume_data.experience %}
+  <li>{{ exp }}</li>
+  {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if resume_data.get('projects') %}
+  <h2>Projects</h2>
+  <ul>
+  {% for proj in resume_data.projects %}
+  <li>{{ proj }}</li>
+  {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if resume_data.get('certifications') %}
+  <h2>Certifications</h2>
+  <ul>
+  {% for cert in resume_data.certifications %}
+  <li>{{ cert }}</li>
+  {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if resume_data.get('achievements') %}
+  <h2>Achievements</h2>
+  <ul>
+  {% for ach in resume_data.achievements %}
+  <li>{{ ach }}</li>
+  {% endfor %}
+  </ul>
+  {% endif %}
+</body>
+</html>
