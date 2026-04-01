@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+ï»¿import { useState, useEffect, useRef } from 'react';
 import api from '../lib/api';
 import { internshipService, applicationService, recommendationService } from '../lib/services';
 import { GlassCard } from '../components/GlassCard';
@@ -152,7 +152,8 @@ const Internships = () => {
           ? item.description.split(' ').filter((w: string) => w.length > 5).slice(0, 3)
           : [],
         url: item.application_url || '#',
-      }));      if (!append) {
+      }));
+      if (!append) {
         localStorage.setItem('cached_internships', JSON.stringify(mapped));
         localStorage.setItem('cached_total', String(data.total || items.length));
       }
@@ -414,7 +415,7 @@ const Internships = () => {
                       <Briefcase className="w-4 h-4 text-white/40" />
                       <div>
                         <p className="text-sm font-medium">{s.position}</p>
-                        <p className="text-xs text-white/60">{s.company} • {s.location}</p>
+                        <p className="text-xs text-white/60">{s.company}   {s.location}</p>
                       </div>
                     </button>
                   ))}
@@ -579,7 +580,7 @@ const Internships = () => {
                     <p className="text-green-400 font-medium mb-1">? Why it matches:</p>
                     <ul className="space-y-1">
                       {explanations[internship.id].match_reasons.map((r: string, i: number) => (
-                        <li key={i} className="text-white/70">• {r}</li>
+                        <li key={i} className="text-white/70">  {r}</li>
                       ))}
                     </ul>
                   </div>

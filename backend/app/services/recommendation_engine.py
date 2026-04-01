@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 from dataclasses import dataclass
 
 import numpy as np
@@ -254,3 +254,88 @@ class RecommendationEngine:
         self.db.commit()
         recs = self.get_recommendations(user_id, limit=self.TOP_N)
         return {"recommendations": len(recs)}
+
+
+def explain_match(
+    internship_title: str,
+    internship_company: str,
+    internship_description: str,
+    user_skills: str,
+    matched_skills: list,
+    missing_skills: list,
+    user_experience: str = "",
+    user_projects: str = "",
+) -> dict:
+    import json
+    try:
+        from groq import Groq
+        from app.config import settings
+        groq_client = Groq(api_key=settings.GROQ_API_KEY)
+    except Exception as exc:
+        logger.error("groq_client_error error=%s", type(exc).__name__)
+        return {
+            "match_reasons": ["Strong skill alignment with role requirements"],
+            "missing_skills": list(missing_skills)[:3] if missing_skills else [],
+            "next_actions": ["Review job description carefully", "Update resume with relevant projects"],
+        }
+
+    messages = [
+        {
+            "role": "system",
+            "content": """You are an expert career advisor. Explain why an internship matches a candidate based on their skills and the job description.
+Return JSON only, no markdown.
+Format: {"match_reasons": ["specific reason 1", "specific reason 2", "specific reason 3"], "missing_skills": ["critical missing skill 1", "critical missing skill 2"], "tip": "one specific actionable tip to improve their chances"}
+Keep match_reasons under 15 words each. Max 3 reasons. Ensure the tip is actionable."""
+        },
+        {
+            "role": "user",
+            "content": f"""
+Internship: {internship_title} at {internship_company}
+Description: {internship_description}
+User skills: {user_skills}
+Matched: {', '.join(matched_skills) if matched_skills else 'None'}
+Missing: {', '.join(missing_skills) if missing_skills else 'None'}
+"""
+        }
+    ]
+
+    try:
+        response = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=messages,
+            temperature=0.7,
+            max_tokens=400,
+            response_format={"type": "json_object"}
+        )
+
+        content = response.choices[0].message.content.strip()
+        logger.info("Raw LLM response: %s", content)
+
+        # Strip markdown fences if present
+        if '```' in content:
+            content = content.split('```')[1]
+            if content.startswith('json'):
+                content = content[4:]
+            content = content.strip()
+
+        # Find JSON boundaries
+        start = content.find('{')
+        end = content.rfind('}') + 1
+        if start != -1 and end > start:
+            content = content[start:end]
+
+        result = json.loads(content)
+
+        return {
+            "match_reasons": result.get("match_reasons", [])[:3],
+            "missing_skills": result.get("missing_skills", [])[:3],
+            "tip": result.get("tip", "Review the job description carefully.")
+        }
+
+    except Exception as e:
+        logger.error("groq_explain_error error=%s", e)
+        return {
+            "match_reasons": ["Strong skill alignment with role requirements"],
+            "missing_skills": list(missing_skills)[:3] if missing_skills else [],
+            "tip": "Update your resume with relevant projects and skills."
+        }

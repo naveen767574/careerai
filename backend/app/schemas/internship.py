@@ -1,4 +1,6 @@
-﻿from datetime import date, datetime
+from datetime import date, datetime
+from typing import List
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -34,3 +36,10 @@ class SkillGapResponse(BaseModel):
     matched_skills: list[str]
     missing_skills: list[str]
     match_percentage: float
+
+
+class MatchExplanation(BaseModel):
+    match_reasons: List[str]
+    missing_skills: List[str]
+    tip: str
+

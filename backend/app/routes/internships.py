@@ -1,4 +1,4 @@
-﻿from math import ceil
+from math import ceil
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -10,13 +10,17 @@ from app.models.internship import Internship
 from app.models.internship_skill import InternshipSkill
 from app.models.resume import Resume
 from app.models.skill import Skill
+from app.models.experience import Experience
+from app.models.project import Project
 from app.services.auth_service import AuthService
 from app.schemas.internship import (
     InternshipDetailResponse,
     InternshipListResponse,
     InternshipOut,
+    MatchExplanation,
     SkillGapResponse,
 )
+from app.services.recommendation_engine import explain_match as generate_explanation
 
 router = APIRouter(prefix="/internships", tags=["internships"])
 security = HTTPBearer()
@@ -179,7 +183,7 @@ async def skill_gap(
 
 
 
-@router.get("/{internship_id}/explain")
+@router.get("/{internship_id}/explain", response_model=MatchExplanation)
 async def explain_match(
     internship_id: int,
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -200,74 +204,39 @@ async def explain_match(
     if not internship:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Internship not found")
 
-    # Fetch user skills
     user_skills = db.query(Skill).filter(Skill.user_id == user.id).all()
-    user_skill_names = [s.skill_name for s in user_skills]
-
-    # Fetch matched/missing skills using existing logic
     required = db.query(InternshipSkill).filter(
         InternshipSkill.internship_id == internship_id
     ).all()
-    required_set = {s.skill_name.lower() for s in required}
-    user_set = {s.skill_name.lower() for s in user_skills}
-    matched = sorted({s.skill_name for s in required if s.skill_name.lower() in user_set})
-    missing = sorted({s.skill_name for s in required if s.skill_name.lower() not in user_set})
 
-    # Generate LLM explanation
-    try:
-        from groq import Groq
-        from app.config import settings
-        import json
+    required_skills = [s.skill_name for s in required]
+    matched = set([s.skill_name.lower() for s in user_skills]) & set([s.lower() for s in required_skills])
+    missing = set([s.lower() for s in required_skills]) - set([s.skill_name.lower() for s in user_skills])
 
-        client = Groq(api_key=settings.GROQ_API_KEY)
+    matched_clean = list(matched)[:5]
+    missing_clean = list(missing)[:5]
 
-        prompt = f"""You are a career advisor. Explain why this internship matches a student's profile.
+    experiences = db.query(Experience).filter(Experience.user_id == user.id).all()
+    projects = db.query(Project).filter(Project.user_id == user.id).all()
+    
+    user_experience = "; ".join([f"{e.role} at {e.company}" for e in experiences if e.role and e.company])
+    user_projects = "; ".join([p.name for p in projects if p.name])
 
-Internship: {internship.title} at {internship.company}
-Job Description: {(internship.description or '')[:400]}
+    user_skills_str = ", ".join([s.skill_name for s in user_skills]) if user_skills else "None"
 
-Student Skills: {', '.join(user_skill_names[:20])}
-Matched Skills: {', '.join(matched[:10])}
-Missing Skills: {', '.join(missing[:5])}
+    import re
+    clean_description = re.sub(r"<[^>]+>", " ", internship.description or "")
+    clean_description = re.sub(r"\s+", " ", clean_description).strip()
+    
+    explanation = generate_explanation(
+        internship_title=internship.title,
+        internship_company=internship.company,
+        internship_description=clean_description[:2000],
+        user_skills=user_skills_str,
+        matched_skills=matched_clean,
+        missing_skills=missing_clean,
+        user_experience=user_experience,
+        user_projects=user_projects,
+    )
 
-Return ONLY a JSON object like this:
-{{
-  "match_reasons": ["reason 1", "reason 2", "reason 3"],
-  "missing_skills": ["skill 1", "skill 2"],
-  "tip": "One sentence advice on how to strengthen this application"
-}}
-
-Keep each reason under 15 words. Max 3 match reasons. Max 3 missing skills. Be specific."""
-
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=300,
-            temperature=0.3,
-        )
-        content = response.choices[0].message.content.strip()
-        if content.startswith("```"):
-            content = content.split("```")[1]
-            if content.startswith("json"):
-                content = content[4:]
-        result = json.loads(content)
-    except Exception as e:
-        # Fallback if LLM fails — use rule-based explanation
-        result = {
-            "match_reasons": [
-                f"Your {s} skill matches this role's requirements"
-                for s in matched[:3]
-            ] or ["Your profile has relevant technical skills for this role"],
-            "missing_skills": missing[:3],
-            "tip": "Highlight your relevant projects in your application."
-        }
-
-    return {
-        "internship_id": internship_id,
-        "title": internship.title,
-        "company": internship.company,
-        "matched_skills": matched,
-        "missing_skills": missing,
-        "match_reasons": result.get("match_reasons", []),
-        "tip": result.get("tip", ""),
-    }
+    return explanation

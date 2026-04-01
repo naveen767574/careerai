@@ -25,8 +25,9 @@ export const internshipService = {
     const res = await api.get(`/internships/${id}`);
     return res.data;
   },
-  async explainMatch(internshipId: number) {
+  async explainMatch(internshipId: string) {
     const res = await api.get(`/internships/${internshipId}/explain`);
+    // Returns: { match_reasons: string[], missing_skills: string[], tip: string }
     return res.data;
   },
 };
