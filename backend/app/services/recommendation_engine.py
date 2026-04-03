@@ -259,7 +259,6 @@ class RecommendationEngine:
 def explain_match(
     internship_title: str,
     internship_company: str,
-    internship_description: str,
     user_skills: str,
     matched_skills: list,
     missing_skills: list,
@@ -282,17 +281,71 @@ def explain_match(
     messages = [
         {
             "role": "system",
-            "content": """You are an expert career advisor. Explain why an internship matches a candidate based on their skills and the job description.
-Return JSON only, no markdown.
-Format: {"match_reasons": ["specific reason 1", "specific reason 2", "specific reason 3"], "missing_skills": ["critical missing skill 1", "critical missing skill 2"], "tip": "one specific actionable tip to improve their chances"}
-Keep match_reasons under 15 words each. Max 3 reasons. Ensure the tip is actionable."""
+            "content": """You are a precise and practical career advisor.
+
+You MUST follow ALL rules:
+
+1. Only use:
+   - user_skills
+   - matched_skills
+   - missing_skills
+   - user_projects
+   - user_experience
+
+2. DO NOT invent or assume any skills or tools not provided.
+
+3. Write like a human mentor, NOT a machine.
+
+4. Avoid repetitive phrases like:
+   - 'matches requirement'
+   - 'aligns with role'
+
+5. Instead:
+   - Explain WHY a skill is useful in this role
+
+Example:
+BAD:
+'Python matches the role'
+
+GOOD:
+'Your Python skills help in building backend logic for this role'
+
+6. For missing_skills:
+   - Expand generic terms into slightly more meaningful ones
+   - BUT stay within given inputs
+
+Example:
+If input is 'api'
+Output can be:
+'API development using FastAPI or Flask'
+
+7. Tip MUST be:
+   - Specific
+   - Actionable
+   - Based ONLY on missing_skills
+
+Example:
+'Build a REST API using FastAPI and connect it to a PostgreSQL database'
+
+8. Keep:
+   - max 3 match_reasons
+   - each under 15 words
+   - concise but meaningful
+
+Return JSON only:
+{
+  "match_reasons": ["..."],
+  "missing_skills": ["..."],
+  "tip": "..."
+}"""
         },
         {
             "role": "user",
             "content": f"""
 Internship: {internship_title} at {internship_company}
-Description: {internship_description}
 User skills: {user_skills}
+User experience: {user_experience}
+User projects: {user_projects}
 Matched: {', '.join(matched_skills) if matched_skills else 'None'}
 Missing: {', '.join(missing_skills) if missing_skills else 'None'}
 """
@@ -300,6 +353,7 @@ Missing: {', '.join(missing_skills) if missing_skills else 'None'}
     ]
 
     try:
+        #logger.warning("FINAL PROMPT SENT: %s", messages)
         response = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=messages,

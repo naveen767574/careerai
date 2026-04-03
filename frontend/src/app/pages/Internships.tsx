@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../lib/api';
 import { internshipService, applicationService, recommendationService } from '../lib/services';
 import { GlassCard } from '../components/GlassCard';
@@ -123,10 +123,14 @@ const Internships = () => {
     setFilteredInternships(filtered);
   };
 
-  const loadInternships = async (append = false, searchQuery = '') => {
+  useEffect(() => {
+    applyFilters();
+  }, [internships, selectedCategory, locationFilter, dateFilter]);
+
+  const loadInternships = async (append = false, searchQuery = '', targetPage = page) => {
     if (internships.length === 0) setLoading(true);
     try {
-      const data = await internshipService.getAll({ page, limit: 20, search: searchQuery });
+      const data = await internshipService.getAll({ page: targetPage, limit: 20, search: searchQuery });
       const items = data.internships || data.items || data || [];
     
     // Track if we're in search mode
@@ -208,7 +212,7 @@ const Internships = () => {
   const handleSearch = () => {
     setShowSuggestions(false);
     setPage(1);
-    loadInternships(false, search.trim());
+    loadInternships(false, search.trim(), 1);
   };
 
   const handleRefresh = async () => {
@@ -381,6 +385,7 @@ const Internships = () => {
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
+                  e.preventDefault();
                   setShowSuggestions(false);
                   handleSearch();
                 }

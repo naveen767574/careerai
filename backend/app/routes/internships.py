@@ -66,6 +66,9 @@ async def list_internships(
                 "offset": (page - 1) * limit
             }).fetchall()
 
+            if not rows:
+                raise ValueError("No semantic matches found, falling back to keyword search")
+
             total = db.execute(count_sql, {"vec": vector_str}).scalar() or 0
             pages = ceil(total / limit) if total else 1
 
@@ -205,16 +208,48 @@ async def explain_match(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Internship not found")
 
     user_skills = db.query(Skill).filter(Skill.user_id == user.id).all()
+    import re
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    clean_description = re.sub(r"<[^>]+>", " ", internship.description or "")
+    clean_description = re.sub(r"\s+", " ", clean_description).strip()
+
     required = db.query(InternshipSkill).filter(
         InternshipSkill.internship_id == internship_id
     ).all()
+    
+    required_skills = [s.skill_name for s in required if s.skill_name]
 
-    required_skills = [s.skill_name for s in required]
-    matched = set([s.skill_name.lower() for s in user_skills]) & set([s.lower() for s in required_skills])
-    missing = set([s.lower() for s in required_skills]) - set([s.skill_name.lower() for s in user_skills])
+    if not required_skills:
+        common_skills = [
+            "python","django","flask","fastapi","react","node","aws","docker",
+            "kubernetes","sql","mongodb","postgresql","javascript","typescript"
+        ]
+        desc_lower = clean_description.lower()
+        required_skills = [s for s in common_skills if s in desc_lower]
 
-    matched_clean = list(matched)[:5]
-    missing_clean = list(missing)[:5]
+    user_skills_clean = [s.skill_name.strip().lower() for s in user_skills if s.skill_name]
+    job_skills_clean = [s.strip().lower() for s in required_skills if s]
+
+    if not job_skills_clean:
+        job_skills_clean = ["backend", "api", "database"]
+
+    matched_skills = list(set(user_skills_clean) & set(job_skills_clean))
+    missing_skills = list(set(job_skills_clean) - set(user_skills_clean))
+
+    if not matched_skills:
+        matched_skills = []
+
+    if not missing_skills:
+        missing_skills = []
+
+    matched_clean = matched_skills[:5]
+    missing_clean = missing_skills[:5]
+
+    logger.info("MATCHED: %s", matched_clean)
+    logger.info("MISSING: %s", missing_clean)
 
     experiences = db.query(Experience).filter(Experience.user_id == user.id).all()
     projects = db.query(Project).filter(Project.user_id == user.id).all()
@@ -223,15 +258,10 @@ async def explain_match(
     user_projects = "; ".join([p.name for p in projects if p.name])
 
     user_skills_str = ", ".join([s.skill_name for s in user_skills]) if user_skills else "None"
-
-    import re
-    clean_description = re.sub(r"<[^>]+>", " ", internship.description or "")
-    clean_description = re.sub(r"\s+", " ", clean_description).strip()
     
     explanation = generate_explanation(
         internship_title=internship.title,
         internship_company=internship.company,
-        internship_description=clean_description[:2000],
         user_skills=user_skills_str,
         matched_skills=matched_clean,
         missing_skills=missing_clean,

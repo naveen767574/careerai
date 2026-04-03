@@ -180,7 +180,7 @@ export function ApplicationsTracker() {
                       <select
                         value={app.status}
                         onChange={(e) => handleStatusChange(app.id, e.target.value)}
-                        className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1"
+                        className="text-xs bg-[#0A0A0F] border border-white/10 rounded-lg px-2 py-1 text-white"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <option value="saved">Saved</option>

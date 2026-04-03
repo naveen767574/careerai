@@ -177,10 +177,20 @@ export function Dashboard() {
               <XAxis dataKey="month" stroke="rgba(255,255,255,0.6)" />
               <YAxis stroke="rgba(255,255,255,0.6)" />
               <Tooltip
-                contentStyle={{
-                  backgroundColor: 'rgba(13, 13, 26, 0.95)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '12px',
+                content={({ active, payload, label }) => {
+                  if (active && payload && payload.length) {
+                    return (
+                      <div className="bg-[#0D0D1A] border border-white/10 rounded-xl p-3 shadow-lg bg-opacity-95">
+                        <p className="text-white font-medium mb-1">{`${label}`}</p>
+                        {payload.map((entry: any, index: number) => (
+                          <p key={`item-${index}`} style={{ color: entry.color || '#3B82F6' }} className="text-sm font-semibold">
+                            {`${entry.name}: ${entry.value}`}
+                          </p>
+                        ))}
+                      </div>
+                    );
+                  }
+                  return null;
                 }}
               />
               <Area
@@ -214,10 +224,19 @@ export function Dashboard() {
                 ))}
               </Pie>
               <Tooltip
-                contentStyle={{
-                  backgroundColor: 'rgba(13, 13, 26, 0.95)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '12px',
+                content={({ active, payload }) => {
+                  if (active && payload && payload.length) {
+                    return (
+                      <div className="bg-[#0D0D1A] border border-white/10 rounded-xl p-3 shadow-lg bg-opacity-95">
+                        {payload.map((entry: any, index: number) => (
+                          <p key={`item-${index}`} style={{ color: entry.payload.color || entry.color }} className="text-sm font-semibold">
+                            {`${entry.name}: ${entry.value}`}
+                          </p>
+                        ))}
+                      </div>
+                    );
+                  }
+                  return null;
                 }}
               />
             </PieChart>
