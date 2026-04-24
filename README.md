@@ -219,7 +219,7 @@ careerai/
 
 **Naveen B**
 - LinkedIn: [linkedin.com/in/naveen-b-profile](https://www.linkedin.com/in/naveen-b-profile/)
-- GitHub: [@yourusername](https://github.com/naveen767574)
+- GitHub: [https://github.com/naveenb-ai](https://github.com/naveenb-ai)
 
 ---
 
