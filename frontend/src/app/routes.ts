@@ -5,11 +5,13 @@ import { Register } from "./pages/Register";
 import { Dashboard } from "./pages/Dashboard";
 import { ResumeAnalyzer } from "./pages/ResumeAnalyzer";
 import { Internships } from "./pages/Internships";
+import { SkillGap } from "./pages/SkillGap";
 import { CareerPaths } from "./pages/CareerPaths";
 import { ApplicationsTracker } from "./pages/ApplicationsTracker";
 import { InterviewPrep } from "./pages/InterviewPrep";
 import { LinkedInAnalyzer } from "./pages/LinkedInAnalyzer";
 import { ResumeBuilder } from "./pages/ResumeBuilder";
+import { CoverLetter } from "./pages/CoverLetter";
 
 export const router = createBrowserRouter([
   {
@@ -27,11 +29,13 @@ export const router = createBrowserRouter([
       { index: true, Component: Dashboard },
       { path: "resume-analyzer", Component: ResumeAnalyzer },
       { path: "internships", Component: Internships },
+      { path: "skill-gap/:id", Component: SkillGap },
       { path: "career-paths", Component: CareerPaths },
       { path: "applications", Component: ApplicationsTracker },
       { path: "interview-prep", Component: InterviewPrep },
       { path: "linkedin-analyzer", Component: LinkedInAnalyzer },
       { path: "resume-builder", Component: ResumeBuilder },
+      { path: "cover-letter", Component: CoverLetter },
     ],
   },
 ]);

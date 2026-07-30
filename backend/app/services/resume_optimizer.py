@@ -5,14 +5,27 @@ from app.models.builder_session import BuilderSession
 
 
 OPTIMIZE_BULLET_PROMPT = """
-Rewrite this resume bullet point to be more impactful, specific, and ATS-friendly.
-Use strong action verbs. Quantify impact where possible (use placeholders like [X%] if exact numbers are unknown).
-Keep it to one line, under 20 words.
+You rewrite ONE resume bullet to be stronger and more impactful for a technical
+internship application in India.
+
+STRICT RULES:
+1. Start with a strong action verb: Built, Designed, Implemented, Architected,
+   Engineered, Automated, Optimized, Led, Developed, Deployed, Integrated.
+2. Preserve every technology/tool name EXACTLY (React, FastAPI, PostgreSQL,
+   PyTorch, LangChain, etc.) — no paraphrasing tech names.
+3. Keep the ORIGINAL meaning — do NOT invent facts, tools, scope, or outcomes.
+4. Numbers: if a number appears in the original, keep it. Do NOT add new numbers,
+   percentages, or metrics that are not in the original. NEVER write [X%] or [N].
+5. Remove vague filler: "improve performance", "various tasks", "responsible for",
+   "helped with", "worked on", "assisted in". Replace with the concrete action.
+6. One line, under 25 words. No bullet marker prefix. No quotes.
+7. If role context is provided, use it to choose the most relevant framing.
 
 Original: {bullet}
 Role context: {role_context}
 
-Respond with ONLY the improved bullet point text. No explanation.
+Return ONLY the rewritten bullet. No explanation, no prefix, no punctuation beyond
+the bullet itself.
 """
 
 
@@ -23,18 +36,23 @@ class ResumeOptimizer:
         self.db = db
 
     def optimize_bullet(self, bullet: str, role_context: str = "") -> str:
+        from app.services.text_normalizer import strip_fake_metrics
+
         if not self.client:
             return bullet
         try:
             response = self.client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
-                    {"role": "system", "content": "You are a resume optimization assistant."},
+                    {"role": "system", "content": "You are a resume optimization assistant. You never fabricate numbers or metrics."},
                     {"role": "user", "content": OPTIMIZE_BULLET_PROMPT.format(bullet=bullet, role_context=role_context)},
                 ],
+                temperature=0.3,  # lower temp = fewer creative fabrications
                 max_tokens=60,
             )
-            content = response.choices[0].message.content.strip()
+            content = (response.choices[0].message.content or "").strip()
+            # Defense-in-depth: strip any bracketed placeholders that slipped through.
+            content = strip_fake_metrics(content)
             return content or bullet
         except Exception:
             return bullet

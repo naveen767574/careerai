@@ -1,0 +1,185 @@
+{
+  "_meta": {
+    "purpose": "Phase 0 golden set — HUMAN-labeled ground truth for offline evaluation.",
+    "labeling_rules": [
+      "expected_skills = the skills a competent human reviewer judges the posting to actually require, lowercased and canonical (e.g. 'javascript' not 'JS', 'nodejs' not 'Node.js').",
+      "Label the TRUE requirements from the description text, not what any current extractor happens to catch. Low precision/recall vs today's keyword extractor is expected — that gap IS the baseline Phase 2 must close.",
+      "Include a few deliberately THIN / GARBAGE postings (empty or near-empty skill signal) — these are the cases that produce the '100% match' problem and must be tracked.",
+      "expected_role_type in {data, backend, frontend, general}."
+    ],
+    "version": 1
+  },
+  "cases": [
+    {
+      "title": "Data Science Intern",
+      "company": "NorthWind Analytics",
+      "description": "Join our analytics team to build predictive models. You will clean and analyze large datasets, engineer features, and train machine learning models. Strong Python required, with hands-on pandas, numpy, and scikit-learn. Experience writing SQL queries against a data warehouse is essential. Familiarity with data visualization and statistics preferred.",
+      "expected_skills": ["python", "pandas", "numpy", "scikit-learn", "sql", "machine learning", "statistics", "data visualization"],
+      "expected_role_type": "data"
+    },
+    {
+      "title": "Machine Learning Intern",
+      "company": "Vireo AI",
+      "description": "Work on deep learning research for computer vision. Implement and train neural networks in PyTorch. Solid Python, numpy, and a strong grasp of linear algebra and probability. Bonus: experience with NLP or transformer architectures.",
+      "expected_skills": ["python", "pytorch", "numpy", "deep learning", "computer vision", "nlp"],
+      "expected_role_type": "data"
+    },
+    {
+      "title": "Data Analyst Intern",
+      "company": "BrightMetrics",
+      "description": "Support the BI team. Write SQL to pull data, build dashboards in Tableau, and present findings. Comfortable with Excel and basic statistics. Some Python (pandas) for ad-hoc analysis is a plus.",
+      "expected_skills": ["sql", "tableau", "excel", "statistics", "python", "pandas"],
+      "expected_role_type": "data"
+    },
+    {
+      "title": "Backend Engineering Intern",
+      "company": "Corewave Systems",
+      "description": "Build and maintain REST APIs in Python using FastAPI. You will design database schemas in PostgreSQL, write efficient queries, and containerize services with Docker. Understanding of Git and Linux expected. Exposure to Redis caching a plus.",
+      "expected_skills": ["python", "fastapi", "rest api", "postgresql", "sql", "docker", "git", "linux", "redis"],
+      "expected_role_type": "backend"
+    },
+    {
+      "title": "Software Engineer Intern, Backend",
+      "company": "Latchford",
+      "description": "Develop microservices in Java and Spring Boot. Work with MySQL, message queues, and Kubernetes on AWS. Strong data-structures fundamentals required. CI/CD familiarity welcome.",
+      "expected_skills": ["java", "spring boot", "mysql", "sql", "kubernetes", "aws", "ci/cd"],
+      "expected_role_type": "backend"
+    },
+    {
+      "title": "Platform Engineering Intern",
+      "company": "Nimbus Cloud",
+      "description": "Help operate our cloud platform. Write automation in Python and Go. Manage infrastructure on GCP with Terraform, Docker, and Kubernetes. Solid Linux and networking basics required.",
+      "expected_skills": ["python", "go", "gcp", "terraform", "docker", "kubernetes", "linux"],
+      "expected_role_type": "backend"
+    },
+    {
+      "title": "Frontend Developer Intern",
+      "company": "Pixelform",
+      "description": "Build responsive user interfaces with React and TypeScript. Strong HTML and CSS skills required. You will consume REST APIs, manage component state, and ensure accessibility. Experience with Next.js and testing is a plus.",
+      "expected_skills": ["react", "typescript", "javascript", "html", "css", "rest api", "next.js"],
+      "expected_role_type": "frontend"
+    },
+    {
+      "title": "UI Engineer Intern",
+      "company": "Northstar Labs",
+      "description": "Craft polished web experiences. Deep JavaScript and CSS knowledge, plus one modern framework (Vue or React). Care about performance and pixel-perfect design. Git-based workflow.",
+      "expected_skills": ["javascript", "css", "html", "vue", "react", "git"],
+      "expected_role_type": "frontend"
+    },
+    {
+      "title": "Full Stack Intern",
+      "company": "Juno Software",
+      "description": "Work across the stack. Frontend in React and TypeScript, backend in Node.js with Express. Store data in MongoDB. Deploy with Docker. Comfortable with Git and REST APIs.",
+      "expected_skills": ["react", "typescript", "javascript", "nodejs", "express", "mongodb", "docker", "git", "rest api"],
+      "expected_role_type": "backend"
+    },
+    {
+      "title": "Data Engineering Intern",
+      "company": "Fluxstream",
+      "description": "Build ETL pipelines. Strong SQL and Python. Work with Spark for large-scale processing and Airflow for orchestration. Data lands in a cloud warehouse on AWS.",
+      "expected_skills": ["sql", "python", "spark", "airflow", "aws", "etl"],
+      "expected_role_type": "data"
+    },
+    {
+      "title": "NLP Research Intern",
+      "company": "Lexicon AI",
+      "description": "Research applied NLP. Fine-tune transformer models with PyTorch and Hugging Face. Strong Python and a background in machine learning and linguistics. Handle large text datasets.",
+      "expected_skills": ["python", "pytorch", "nlp", "machine learning", "deep learning", "hugging face"],
+      "expected_role_type": "data"
+    },
+    {
+      "title": "DevOps Intern",
+      "company": "Steelgrid",
+      "description": "Support CI/CD and observability. Automate with Bash and Python. Manage Docker and Kubernetes workloads on Azure. Write Terraform. Monitor with Prometheus and Grafana.",
+      "expected_skills": ["python", "docker", "kubernetes", "azure", "terraform", "ci/cd", "linux"],
+      "expected_role_type": "backend"
+    },
+    {
+      "title": "Android Developer Intern",
+      "company": "Mobilis",
+      "description": "Build Android apps in Kotlin. Work with the Android SDK, REST APIs, and SQLite. Understand MVVM architecture. Git-based team workflow.",
+      "expected_skills": ["kotlin", "android", "rest api", "sqlite", "git"],
+      "expected_role_type": "frontend"
+    },
+    {
+      "title": "Business Intelligence Intern",
+      "company": "Ledgerpoint",
+      "description": "Turn data into decisions. Heavy SQL, dashboards in Power BI, and stakeholder reporting. Excel modeling. Light Python for automation.",
+      "expected_skills": ["sql", "power bi", "excel", "python"],
+      "expected_role_type": "data"
+    },
+    {
+      "title": "Cloud Engineering Intern",
+      "company": "Aeronaut",
+      "description": "Deploy and scale services on AWS. Infrastructure as code with Terraform. Containerize with Docker and orchestrate with Kubernetes. Python scripting. Strong Linux.",
+      "expected_skills": ["aws", "terraform", "docker", "kubernetes", "python", "linux"],
+      "expected_role_type": "backend"
+    },
+    {
+      "title": "Software Intern",
+      "company": "Gencode",
+      "description": "Great opportunity for a motivated student. You will contribute to real projects, learn from senior engineers, and grow your skills in a fast-paced environment. We value curiosity and teamwork.",
+      "expected_skills": [],
+      "expected_role_type": "general",
+      "notes": "THIN posting — no concrete skill signal. Produces the false '100% match' when scored against near-empty required lists. Must be tracked."
+    },
+    {
+      "title": "Engineering Intern",
+      "company": "Vantage",
+      "description": "We are hiring interns to join our engineering org. Competitive stipend, mentorship, and the chance to ship. Python knowledge helpful.",
+      "expected_skills": ["python"],
+      "expected_role_type": "general",
+      "notes": "THIN posting — only one weak skill signal ('Python helpful'). Classic single-skill case."
+    },
+    {
+      "title": "Tech Intern",
+      "company": "Startly",
+      "description": "Join a rocketship startup! Wear many hats, move fast, and make an impact. Passion for technology required.",
+      "expected_skills": [],
+      "expected_role_type": "general",
+      "notes": "GARBAGE posting — zero extractable skills. Extractor should return empty; scoring must not fabricate a match."
+    },
+    {
+      "title": "Junior Data Scientist Intern",
+      "company": "Quantis",
+      "description": "Apply statistics and machine learning to financial data. Python with pandas and scikit-learn. SQL for data access. Communicate results to non-technical stakeholders.",
+      "expected_skills": ["python", "pandas", "scikit-learn", "sql", "machine learning", "statistics"],
+      "expected_role_type": "data"
+    },
+    {
+      "title": "Web Developer Intern",
+      "company": "Craftline",
+      "description": "Build and maintain client websites. Solid HTML, CSS, and JavaScript. Some React. WordPress experience a plus. Version control with Git.",
+      "expected_skills": ["html", "css", "javascript", "react", "git"],
+      "expected_role_type": "frontend"
+    },
+    {
+      "title": "Site Reliability Intern",
+      "company": "Uptime Labs",
+      "description": "Keep production healthy. Linux internals, Python and Bash automation, Docker, Kubernetes. On-call shadowing. Monitor and debug distributed systems on AWS.",
+      "expected_skills": ["linux", "python", "docker", "kubernetes", "aws"],
+      "expected_role_type": "backend"
+    },
+    {
+      "title": "Analytics Engineer Intern",
+      "company": "Modelworks",
+      "description": "Bridge data and analytics. Write clean SQL and dbt models. Python for transformations. Data warehouse on Snowflake. Git workflow.",
+      "expected_skills": ["sql", "dbt", "python", "snowflake", "git"],
+      "expected_role_type": "data"
+    },
+    {
+      "title": "React Native Intern",
+      "company": "Foldable",
+      "description": "Build cross-platform mobile apps with React Native and TypeScript. Consume REST APIs. Manage state with Redux. Ship to iOS and Android.",
+      "expected_skills": ["react native", "typescript", "javascript", "rest api", "redux"],
+      "expected_role_type": "frontend"
+    },
+    {
+      "title": "API Engineering Intern",
+      "company": "Conduit",
+      "description": "Design and build public APIs. Python and Django REST Framework. PostgreSQL. Authentication, rate limiting, and documentation. Docker for local dev. Git.",
+      "expected_skills": ["python", "django", "rest api", "postgresql", "sql", "docker", "git"],
+      "expected_role_type": "backend"
+    }
+  ]
+}

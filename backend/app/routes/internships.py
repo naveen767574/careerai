@@ -8,19 +8,32 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.internship import Internship
 from app.models.internship_skill import InternshipSkill
+from app.models.recommendation import Recommendation
 from app.models.resume import Resume
 from app.models.skill import Skill
-from app.models.experience import Experience
-from app.models.project import Project
 from app.services.auth_service import AuthService
+from app.services.event_logger import (
+    log_event,
+    EVENT_MATCH_VIEWED,
+    EVENT_WHATIF_SIMULATED,
+)
+from app.schemas.explanation import ExplanationResponse
 from app.schemas.internship import (
     InternshipDetailResponse,
     InternshipListResponse,
     InternshipOut,
-    MatchExplanation,
+    MatchInsightsResponse,
     SkillGapResponse,
+    SkillSimulation,
+    SkillSimulationsResponse,
 )
-from app.services.recommendation_engine import explain_match as generate_explanation
+from app.services.explanation_service import generate_explanation
+from app.services.recommendation_engine import (
+    SKILL_WEIGHTS,
+    SkillClassifier,
+    _derive_match_label,
+    _normalize,
+)
 
 router = APIRouter(prefix="/internships", tags=["internships"])
 security = HTTPBearer()
@@ -128,6 +141,84 @@ async def list_internships(
     }
 
 
+# ---------------------------------------------------------------------------
+# GET /api/internships/stats
+# Returns four stat values for the Internships page header strip.
+# All counts are computed with raw SQL to match exact DB state — no ORM
+# datetime arithmetic that could drift from the DB clock.
+# ---------------------------------------------------------------------------
+
+import logging as _logging
+_stats_logger = _logging.getLogger("internships.stats")
+
+
+@router.get("/stats")
+async def internship_stats(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+):
+    """
+    Returns:
+      total_positions  — active internships in DB
+      new_this_week    — active internships with created_at >= NOW() - 7 days (raw SQL)
+      high_match       — user recommendations with match_percentage >= HIGH_MATCH_THRESHOLD (75)
+      saved            — user applications with status = 'saved'
+    """
+    from app.models.application import Application
+    from app.models.recommendation import Recommendation as Rec
+    from app.services.recommendation_engine import HIGH_MATCH_THRESHOLD
+
+    try:
+        user = AuthService.verify_token(db, credentials.credentials)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+
+    import time as _time
+    _t0 = _time.perf_counter()
+
+    # Total active internships
+    total_positions = db.execute(
+        text("SELECT COUNT(*) FROM internships WHERE is_active = true")
+    ).scalar() or 0
+
+    # New this week — EXACT raw SQL as specified, uses DB clock so no drift
+    new_this_week = db.execute(
+        text(
+            "SELECT COUNT(*) FROM internships "
+            "WHERE is_active = true "
+            "AND created_at >= NOW() - INTERVAL '7 days'"
+        )
+    ).scalar() or 0
+
+    # High match — recommendations for this user with score >= HIGH_MATCH_THRESHOLD (75).
+    # Uses the canonical threshold so the counter agrees with the High/Medium/Low
+    # buckets shown on the cards.
+    high_match = (
+        db.query(Rec)
+        .filter(Rec.user_id == user.id, Rec.match_percentage >= HIGH_MATCH_THRESHOLD)
+        .count()
+    )
+
+    # Saved — applications this user has in 'saved' status
+    saved = (
+        db.query(Application)
+        .filter(Application.user_id == user.id, Application.status == "saved")
+        .count()
+    )
+
+    _elapsed = round(_time.perf_counter() - _t0, 4)
+    _stats_logger.info(
+        "stats.computed user_id=%d total=%d new_this_week=%d high_match=%d saved=%d elapsed_s=%.4f",
+        user.id, total_positions, new_this_week, high_match, saved, _elapsed,
+    )
+
+    return {
+        "total_positions": total_positions,
+        "new_this_week": new_this_week,
+        "high_match": high_match,
+        "saved": saved,
+    }
+
 @router.get("/{internship_id}", response_model=InternshipDetailResponse)
 async def get_internship(internship_id: int, db: Session = Depends(get_db)):
     internship = db.query(Internship).filter(Internship.id == internship_id).first()
@@ -148,6 +239,14 @@ async def skill_gap(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ):
+    """
+    Returns matched/missing skills for this user + internship.
+
+    Reads the STORED semantic matched/missing (cosine >= 0.70) that the
+    recommendation engine computed at refresh time — no embeddings on read,
+    so this view always agrees with the match score and the recommendation chips.
+    Run POST /api/recommendations/refresh first to populate these.
+    """
     try:
         user = AuthService.verify_token(db, credentials.credentials)
     except ValueError as exc:
@@ -161,41 +260,269 @@ async def skill_gap(
     if not internship:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Internship not found")
 
-    required = db.query(InternshipSkill).filter(
-        InternshipSkill.internship_id == internship_id
-    ).all()
-    user_skills = db.query(Skill).filter(Skill.user_id == user.id).all()
+    rec = (
+        db.query(Recommendation)
+        .filter(
+            Recommendation.user_id == user.id,
+            Recommendation.internship_id == internship_id,
+        )
+        .first()
+    )
 
-    required_set = {s.skill_name.lower() for s in required}
-    user_set = {s.skill_name.lower() for s in user_skills}
+    if rec is None:
+        # No recommendation scored yet for this internship+user. There is no stored
+        # score to return, so ask the client to refresh rather than inventing one.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No recommendation for this internship yet. Run /api/recommendations/refresh first.",
+        )
 
-    matched = sorted({s.skill_name for s in required if s.skill_name.lower() in user_set})
-    missing = sorted({s.skill_name for s in required if s.skill_name.lower() not in user_set})
-
-    match_percentage = 0.0
-    if required_set:
-        match_percentage = (len(matched) / len(required_set)) * 100
-
+    # Everything comes straight from the stored recommendation row — matched/missing
+    # AND match_percentage. match_percentage is the composite score (0-100), the SAME
+    # value /api/recommendations returns. It is NOT derived from skill counts here.
     return {
-        "matched_skills": matched,
-        "missing_skills": missing,
-        "match_percentage": round(match_percentage, 2),
+        "matched_skills": sorted(rec.matched_skills or []),
+        "missing_skills": sorted(rec.missing_skills or []),
+        "match_percentage": rec.match_percentage or 0.0,
     }
 
 
+@router.get("/{internship_id}/skill-gap/simulations", response_model=SkillSimulationsResponse)
+async def skill_gap_simulations(
+    internship_id: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+):
+    """
+    "What if" simulation: for each missing skill, estimate the new match %
+    if the user were to add that skill to their profile.
+
+    Uses an analytical formula derived from the stored composite score components,
+    so it is instant (no embeddings, no LLM). The delta is computed from the
+    weighted skill-coverage, skill-depth, and domain-alignment sub-scores only
+    — semantic similarity and seniority are unaffected by adding a skill.
+
+    Formula (all weights from MatchScoringAgent.DEFAULT_WEIGHTS):
+      Δ_coverage  = w_S / total_w                  (× component weight 0.25)
+      Δ_depth     = w_S / total_w × 0.45           (matched_ratio sub-weight inside depth × 0.20)
+      Δ_domain    = 1 / n_required × 0.40          (overlap_ratio sub-weight inside domain × 0.15)
+
+      Δ_composite = Δ_coverage × 0.25
+                  + Δ_depth    × 0.20
+                  + Δ_domain   × 0.15
+    """
+    try:
+        user = AuthService.verify_token(db, credentials.credentials)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+
+    internship = db.query(Internship).filter(Internship.id == internship_id).first()
+    if not internship:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Internship not found")
+
+    rec = (
+        db.query(Recommendation)
+        .filter(
+            Recommendation.user_id == user.id,
+            Recommendation.internship_id == internship_id,
+        )
+        .first()
+    )
+    if rec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No recommendation for this internship yet. Run /api/recommendations/refresh first.",
+        )
+
+    matched_skills: list[str] = rec.matched_skills or []
+    missing_skills: list[str] = rec.missing_skills or []
+    current_pct: float = rec.match_percentage or 0.0
+
+    if not missing_skills:
+        # Nothing to simulate
+        return SkillSimulationsResponse(
+            current_pct=current_pct,
+            simulations=[],
+        )
+
+    # Reconstruct the required skills list and skill weights from the stored internship.
+    required_db = db.query(InternshipSkill).filter(
+        InternshipSkill.internship_id == internship_id
+    ).all()
+    required_skills: list[str] = [_normalize(s.skill_name) for s in required_db]
+
+    if not required_skills:
+        # Fallback: use stored matched + missing as required set
+        required_skills = [_normalize(s) for s in matched_skills + missing_skills]
+
+    # Re-classify skills to get per-skill weights (same logic used at score time).
+    domain_map = {
+        frozenset(["machine learning", "deep learning", "pytorch", "tensorflow",
+                   "nlp", "computer vision", "ai", "ml"]): "ai_ml",
+        frozenset(["react", "vue", "angular", "frontend", "css", "html", "next.js"]): "frontend",
+        frozenset(["django", "fastapi", "flask", "node", "backend", "rest api"]): "backend",
+        frozenset(["aws", "gcp", "azure", "devops", "kubernetes", "docker"]): "devops",
+        frozenset(["pandas", "numpy", "sql", "data analysis", "spark", "etl"]): "data",
+    }
+    title_lower = _normalize(internship.title or "")
+    skill_set = set(required_skills)
+    domain = "general"
+    best = 0
+    for kws, dom in domain_map.items():
+        overlap = len(kws & skill_set)
+        if overlap > best:
+            best, domain = overlap, dom
+
+    classifier = SkillClassifier()
+    skill_weights: dict[str, int] = classifier.classify(
+        skills=required_skills,
+        domain=domain,
+        title=internship.title or "",
+    )
+
+    fallback_w = SKILL_WEIGHTS["important"]
+    total_w = sum(skill_weights.get(s, fallback_w) for s in required_skills)
+    n_required = len(required_skills)
+
+    simulations: list[SkillSimulation] = []
+    # match_percentage is now weighted skill COVERAGE × 100. Adding one skill S
+    # raises matched_weight by w_s, so the displayed % rises by EXACTLY
+    # (w_s / total_w) × 100. This delta is the true change in the shown number —
+    # no composite reconstruction, so the simulation can never disagree with the
+    # score it's projecting from.
+    for skill in missing_skills:
+        skill_n = _normalize(skill)
+        w_s = skill_weights.get(skill_n, fallback_w)
+
+        delta_coverage = (w_s / total_w) if total_w > 0 else 0.0
+
+        simulated_pct = min(100.0, current_pct + delta_coverage * 100)
+        delta_pct = simulated_pct - current_pct
+
+        new_label = _derive_match_label(simulated_pct / 100)
+        simulations.append(SkillSimulation(
+            skill=skill,
+            simulated_pct=round(simulated_pct, 1),
+            delta_pct=round(delta_pct, 1),
+            new_label=new_label,
+        ))
+
+    # Sort by delta descending — highest-impact skills first
+    simulations.sort(key=lambda s: s.delta_pct, reverse=True)
+
+    # Phase 0: record the what-if engagement (best-effort). Top result only —
+    # it's the highest-impact skill the user was shown.
+    top_sim = simulations[0] if simulations else None
+    log_event(
+        EVENT_WHATIF_SIMULATED,
+        user_id=user.id,
+        internship_id=internship_id,
+        payload={
+            "current_pct": current_pct,
+            "n_missing": len(missing_skills),
+            "top_skill": top_sim.skill if top_sim else None,
+            "top_delta_pct": top_sim.delta_pct if top_sim else None,
+        },
+    )
+
+    return SkillSimulationsResponse(
+        current_pct=current_pct,
+        simulations=simulations,
+    )
 
 
 
-@router.get("/{internship_id}/explain", response_model=MatchExplanation)
+
+
+@router.get("/{internship_id}/match-insights", response_model=MatchInsightsResponse)
+async def match_insights(
+    internship_id: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+):
+    """
+    Role-aware, stack-aware match insights for this user + internship.
+
+    Reads the STORED recommendation (matched/missing + weighted-coverage match %)
+    and enriches it into a human-like career-guide bundle: detected role & stack,
+    missing skills grouped into core/secondary/optional, weighted skill impacts,
+    a "why you match" explanation, and a mentor-style recommendation.
+
+    match_percentage is passed through verbatim from the stored recommendation —
+    this endpoint never computes a second, competing score. Run
+    POST /api/recommendations/refresh first to populate the recommendation.
+    """
+    try:
+        user = AuthService.verify_token(db, credentials.credentials)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+
+    internship = db.query(Internship).filter(Internship.id == internship_id).first()
+    if not internship:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Internship not found")
+
+    rec = (
+        db.query(Recommendation)
+        .filter(
+            Recommendation.user_id == user.id,
+            Recommendation.internship_id == internship_id,
+        )
+        .first()
+    )
+    if rec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No recommendation for this internship yet. Run /api/recommendations/refresh first.",
+        )
+
+    # Required skills straight from the internship (already stack-filtered at
+    # refresh time via _get_required_skills, but we re-read the stored rows here).
+    required_db = db.query(InternshipSkill).filter(
+        InternshipSkill.internship_id == internship_id
+    ).all()
+    required_skills = [s.skill_name for s in required_db]
+
+    from app.services.career_match_service import build_match_insights
+
+    insights = build_match_insights(
+        title=internship.title or "",
+        company=internship.company or "",
+        description=internship.description or "",
+        required_skills=required_skills,
+        matched_skills=rec.matched_skills or [],
+        missing_skills=rec.missing_skills or [],
+        match_percentage=rec.match_percentage or 0.0,
+    )
+
+    # Phase 0: record that the user opened the match insights for this role.
+    log_event(
+        EVENT_MATCH_VIEWED,
+        user_id=user.id,
+        internship_id=internship_id,
+        payload={
+            "match_pct": rec.match_percentage or 0.0,
+            "matched": len(rec.matched_skills or []),
+            "missing": len(rec.missing_skills or []),
+        },
+    )
+
+    return insights
+
+
+@router.get("/{internship_id}/explain", response_model=ExplanationResponse)
 async def explain_match(
     internship_id: int,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
 ):
     """
-    Generate a human-readable explanation of why this internship
-    matches the user's profile using Groq LLM.
-    Lazy loaded — only called when user explicitly requests it.
+    Grounded explanation of why this internship matches the user's profile
+    (Phase 3). Lazy loaded — only called when the user explicitly requests it.
+
+    The LLM may only write prose ABOUT the matched/missing skills already stored
+    on the recommendation row. Any invented skill discards the LLM output and we
+    serve a deterministic fallback. The match score is read from storage and is
+    never recomputed here.
     """
     try:
         user = AuthService.verify_token(db, credentials.credentials)
@@ -207,66 +534,39 @@ async def explain_match(
     if not internship:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Internship not found")
 
-    user_skills = db.query(Skill).filter(Skill.user_id == user.id).all()
-    import re
-    import logging
+    # Use the STORED semantic matched/missing from this user's recommendation row
+    # (cosine >= 0.70, computed at refresh time). No exact string matching and no
+    # embedding recompute on read — the chips stay consistent with the match score.
+    rec = (
+        db.query(Recommendation)
+        .filter(
+            Recommendation.user_id == user.id,
+            Recommendation.internship_id == internship_id,
+        )
+        .first()
+    )
+    matched_clean = (rec.matched_skills or [])[:5] if rec else []
+    missing_clean = (rec.missing_skills or [])[:5] if rec else []
 
-    logger = logging.getLogger(__name__)
+    # DETERMINISTIC score — read-only passthrough.
+    match_score = (rec.match_percentage or 0.0) if rec else 0.0
 
-    clean_description = re.sub(r"<[^>]+>", " ", internship.description or "")
-    clean_description = re.sub(r"\s+", " ", clean_description).strip()
-
-    required = db.query(InternshipSkill).filter(
-        InternshipSkill.internship_id == internship_id
-    ).all()
-    
-    required_skills = [s.skill_name for s in required if s.skill_name]
-
-    if not required_skills:
-        common_skills = [
-            "python","django","flask","fastapi","react","node","aws","docker",
-            "kubernetes","sql","mongodb","postgresql","javascript","typescript"
-        ]
-        desc_lower = clean_description.lower()
-        required_skills = [s for s in common_skills if s in desc_lower]
-
-    user_skills_clean = [s.skill_name.strip().lower() for s in user_skills if s.skill_name]
-    job_skills_clean = [s.strip().lower() for s in required_skills if s]
-
-    if not job_skills_clean:
-        job_skills_clean = ["backend", "api", "database"]
-
-    matched_skills = list(set(user_skills_clean) & set(job_skills_clean))
-    missing_skills = list(set(job_skills_clean) - set(user_skills_clean))
-
-    if not matched_skills:
-        matched_skills = []
-
-    if not missing_skills:
-        missing_skills = []
-
-    matched_clean = matched_skills[:5]
-    missing_clean = missing_skills[:5]
-
-    logger.info("MATCHED: %s", matched_clean)
-    logger.info("MISSING: %s", missing_clean)
-
-    experiences = db.query(Experience).filter(Experience.user_id == user.id).all()
-    projects = db.query(Project).filter(Project.user_id == user.id).all()
-    
-    user_experience = "; ".join([f"{e.role} at {e.company}" for e in experiences if e.role and e.company])
-    user_projects = "; ".join([p.name for p in projects if p.name])
-
-    user_skills_str = ", ".join([s.skill_name for s in user_skills]) if user_skills else "None"
-    
-    explanation = generate_explanation(
-        internship_title=internship.title,
-        internship_company=internship.company,
-        user_skills=user_skills_str,
+    explanation, source = generate_explanation(
+        db=db,
+        user_id=user.id,
+        job=internship,
         matched_skills=matched_clean,
         missing_skills=missing_clean,
-        user_experience=user_experience,
-        user_projects=user_projects,
+        score=match_score,
     )
 
-    return explanation
+    return ExplanationResponse(
+        internship_id=internship_id,
+        title=internship.title,
+        company=internship.company,
+        match_score=match_score,
+        matched_skills=[s for s in matched_clean],
+        missing_skills=[s for s in missing_clean],
+        explanation=explanation,
+        source=source,
+    )

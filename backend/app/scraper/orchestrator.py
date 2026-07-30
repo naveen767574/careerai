@@ -46,6 +46,20 @@ class ScraperOrchestrator:
     # Keep at 3 — more than this risks getting IP-blocked by sites
     MAX_WORKERS = 3
 
+    # All platforms we track, with why each is on/off. Used to print an
+    # honest per-platform coverage summary (including disabled ones) so it's
+    # obvious which sources contribute data vs which are intentionally off.
+    KNOWN_PLATFORMS = {
+        "Internshala": "active",
+        "Unstop":      "active",
+        "Shine":       "active",
+        "LinkedIn":    "disabled — blocks scrapers, legal risk",
+        "Indeed":      "disabled — returns 403 (anti-bot)",
+        "Naukri":      "disabled — anti-scraping active",
+        "Wellfound":   "disabled — returns 403 (anti-bot)",
+        "Freshersworld": "disabled — not registered",
+    }
+
     def __init__(self, groq_api_key: Optional[str] = None) -> None:
         self.cleaner     = JobCleaner()
         self.deduplicator = Deduplicator()
@@ -143,6 +157,19 @@ class ScraperOrchestrator:
         finally:
             db.close()
 
+        # ── Per-platform coverage summary ────────────────────────────────
+        # Prints every known platform (active AND disabled) with how many
+        # listings it inserted this run, so it's obvious which sources are
+        # contributing data and which are intentionally off.
+        logger.info("=== SCRAPING COVERAGE (this run) ===")
+        for platform, status in self.KNOWN_PLATFORMS.items():
+            stats = results["sources"].get(platform, {})
+            inserted = stats.get("inserted", 0)
+            updated = stats.get("updated", 0)
+            if platform in results["sources"]:
+                logger.info("%-14s %d new / %d updated", f"{platform}:", inserted, updated)
+            else:
+                logger.info("%-14s 0 jobs (%s)", f"{platform}:", status)
         logger.info("orchestrator.pipeline_complete results=%s", results)
         return results
 

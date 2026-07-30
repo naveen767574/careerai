@@ -63,5 +63,21 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = False
     LOG_LEVEL: str = "DEBUG"
 
+    # Phase 2 — LLM skill extraction. Defaults keep the LLM path ON but it is
+    # strictly additive: with no GROQ_API_KEY, or this flag false, or any LLM
+    # failure, extraction transparently falls back to the keyword extractor
+    # (never worse than the 0.97/0.64 baseline). Flip to false for an instant,
+    # deterministic kill-switch.
+    LLM_SKILL_EXTRACTION_ENABLED: bool = True
+    LLM_EXTRACTION_MODEL: str = "llama-3.1-8b-instant"
+    LLM_EXTRACTION_TIMEOUT_S: float = 8.0
+
+    # Phase 3 — grounded match explanations. Same shape of guarantee: with no
+    # GROQ_API_KEY, this flag false, an LLM failure, or ANY grounding violation,
+    # the explanation path serves a deterministic fallback instead. Flip to
+    # false for an instant kill-switch (explanations become template-only).
+    LLM_EXPLANATION_ENABLED: bool = True
+    LLM_EXPLANATION_MODEL: str = "llama-3.1-8b-instant"
+
 
 settings = Settings()

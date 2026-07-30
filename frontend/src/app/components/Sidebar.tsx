@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
+  Mail,
 } from 'lucide-react';
 import { authService } from '../lib/auth';
 
@@ -23,6 +24,7 @@ const menuItems = [
   { icon: TrendingUp, label: 'Career Paths', path: '/career-paths' },
   { icon: KanbanSquare, label: 'Applications', path: '/applications' },
   { icon: MessageSquare, label: 'Interview Prep', path: '/interview-prep' },
+  { icon: Mail, label: 'Cover Letter', path: '/cover-letter' },
   { icon: Linkedin, label: 'LinkedIn Analyzer', path: '/linkedin-analyzer' },
 ];
 

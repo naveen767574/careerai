@@ -3,15 +3,15 @@ import { GlassCard } from '../components/GlassCard';
 import { motion } from 'motion/react';
 import {
   MessageSquare, Code, Brain, Users, Play,
-  CheckCircle2, Clock, Trophy, Target, RefreshCw,
+  CheckCircle2, Clock, Trophy, Target, RefreshCw, TrendingUp,
 } from 'lucide-react';
 import { interviewService, internshipService } from '../lib/services';
 
 const categories = [
-  { id: 'technical', title: 'Technical', icon: Code, count: 3, color: 'blue' },
-  { id: 'behavioral', title: 'Behavioral', icon: Users, count: 3, color: 'purple' },
-  { id: 'project', title: 'Project Based', icon: Brain, count: 2, color: 'cyan' },
-  { id: 'situational', title: 'Situational', icon: MessageSquare, count: 2, color: 'blue' },
+  { id: 'technical',   title: 'Technical',    icon: Code,          color: 'blue'   },
+  { id: 'behavioral',  title: 'Behavioral',   icon: Users,         color: 'purple' },
+  { id: 'project',     title: 'Project Based',icon: Brain,         color: 'cyan'   },
+  { id: 'situational', title: 'Situational',  icon: MessageSquare, color: 'blue'   },
 ];
 
 export function InterviewPrep() {
@@ -59,9 +59,12 @@ export function InterviewPrep() {
       const sessions = histData.sessions || histData || [];
       setHistory(sessions);
       const completedSessions = sessions.filter((s: any) => s.overall_score !== null && s.overall_score > 0);
+      const bestScore = completedSessions.length > 0
+        ? Math.round(Math.max(...completedSessions.map((s: any) => s.overall_score || 0)))
+        : 0;
       setStats({
-        solved: completedSessions.length * 10, // 10 questions per completed session
-        time: `${sessions.length * 15}m`,
+        solved: completedSessions.length,
+        time: bestScore > 0 ? `${bestScore}%` : 'â€”',
         successRate: completedSessions.length > 0
           ? `${Math.round(completedSessions.reduce((acc: number, s: any) => acc + (s.overall_score || 0), 0) / completedSessions.length)}%`
           : '0%',
@@ -102,7 +105,6 @@ export function InterviewPrep() {
       );
       setAnswer('');
       setAnsweredCount(prev => prev + 1);
-      setStats(prev => ({ ...prev, solved: prev.solved + 1 }));
       setFeedback({
         score: fb.score,
         verdict: fb.verdict,
@@ -144,8 +146,8 @@ export function InterviewPrep() {
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         {[
-          { label: 'Questions Solved', value: stats.solved.toString(), icon: CheckCircle2, color: 'blue' },
-          { label: 'Practice Time', value: stats.time, icon: Clock, color: 'purple' },
+          { label: 'Sessions Done', value: stats.solved.toString(), icon: CheckCircle2, color: 'blue' },
+          { label: 'Best Score', value: stats.time, icon: Trophy, color: 'purple' },
           { label: 'Success Rate', value: stats.successRate, icon: Trophy, color: 'cyan' },
           { label: 'Mock Interviews', value: stats.sessions.toString(), icon: Target, color: 'blue' },
         ].map((stat, idx) => {
@@ -198,7 +200,9 @@ export function InterviewPrep() {
                 <Icon className="w-6 h-6" />
               </div>
               <h3 className="font-semibold mb-1">{category.title}</h3>
-              <p className="text-sm text-white/60">{category.count} questions</p>
+              <p className="text-sm text-white/60">
+                {questions.filter((q: any) => (q.category || '').toLowerCase().includes(category.id)).length || (questions.length > 0 ? 0 : 'â€”')} questions
+              </p>
             </GlassCard>
           );
         })}
@@ -264,7 +268,7 @@ export function InterviewPrep() {
                       >
                         {q.difficulty || 'Medium'}
                       </span>
-                      <span className="text-xs text-white/60">• {q.time || '15 min'}</span>
+                      <span className="text-xs text-white/60">ï¿½ {q.time || '15 min'}</span>
                     </div>
                   </div>
                 </div>
@@ -329,14 +333,14 @@ export function InterviewPrep() {
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Last Answer Feedback</span>
                     <span className={`text-sm font-bold ${feedback.score >= 7 ? 'text-green-400' : feedback.score >= 5 ? 'text-yellow-400' : 'text-red-400'}`}>
-                      {feedback.score}/10 — {feedback.verdict}
+                      {feedback.score}/10 ï¿½ {feedback.verdict}
                     </span>
                   </div>
                   {feedback.strengths?.length > 0 && (
                     <div>
                       <p className="text-xs text-green-400 mb-1">? Strengths</p>
                       {feedback.strengths.map((s: string, i: number) => (
-                        <p key={i} className="text-xs text-white/70">• {s}</p>
+                        <p key={i} className="text-xs text-white/70">ï¿½ {s}</p>
                       ))}
                     </div>
                   )}
@@ -344,7 +348,7 @@ export function InterviewPrep() {
                     <div>
                       <p className="text-xs text-orange-400 mb-1">Improve</p>
                       {feedback.weaknesses.map((w: string, i: number) => (
-                        <p key={i} className="text-xs text-white/70">• {w}</p>
+                        <p key={i} className="text-xs text-white/70">ï¿½ {w}</p>
                       ))}
                     </div>
                   )}
@@ -364,7 +368,7 @@ export function InterviewPrep() {
                 <option value="" className="bg-gray-900">Select an internship...</option>
                 {internships.map((i: any) => (
                   <option key={i.id} value={i.id} className="bg-gray-900">
-                    {i.title} — {i.company}
+                    {i.title} ï¿½ {i.company}
                   </option>
                 ))}
               </select>

@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from jose import JWTError
 
@@ -51,10 +51,45 @@ class AuthService:
         return user
 
     @staticmethod
-    def generate_reset_token(db: Session, email: str) -> str:
+    def generate_reset_token(db: Session, email: str) -> str | None:
+        """
+        Generate a password reset token.
+
+        Returns the token string if the email is registered, None otherwise.
+        Callers must NOT expose whether None was returned — always respond with
+        HTTP 200 to prevent email enumeration attacks.
+
+        Security measures applied here:
+          1. Invalidates ALL previous unused tokens for this user before issuing
+             a new one, so only one valid token ever exists at a time.
+          2. Also purges expired tokens for this user to keep the table clean.
+        """
         user = db.execute(select(User).where(User.email == email)).scalar_one_or_none()
         if not user:
-            raise ValueError("User not found")
+            return None   # caller returns 200 regardless — prevents enumeration
+
+        # ── Invalidate every existing unused token for this user ──────────────
+        # Without this, N reset requests produce N simultaneously valid tokens,
+        # any one of which can be used to hijack the account.
+        db.execute(
+            text(
+                "DELETE FROM password_reset_tokens "
+                "WHERE user_id = :uid AND used = false"
+            ),
+            {"uid": user.id},
+        )
+
+        # ── Also purge expired (but still unused) tokens ──────────────────────
+        # Belt-and-suspenders cleanup; the DELETE above already covers these,
+        # but this keeps the table lean even across users over time.
+        db.execute(
+            text(
+                "DELETE FROM password_reset_tokens "
+                "WHERE user_id = :uid AND expires_at < NOW()"
+            ),
+            {"uid": user.id},
+        )
+
         token = create_reset_token(str(user.id))
         expires_at = datetime.fromtimestamp(decode_token(token)["exp"], tz=timezone.utc)
         reset = PasswordResetToken(user_id=user.id, token=token, expires_at=expires_at)

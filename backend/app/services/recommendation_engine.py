@@ -8,6 +8,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from app.models.application import Application
 from app.models.experience import Experience
 from app.models.internship import Internship
 from app.models.internship_skill import InternshipSkill
@@ -47,6 +48,9 @@ class InternshipRecommendation:
     matched_skills: List[str]
     missing_skills: List[str]
     match_label: str
+    # Composite score (semantic/domain/behavior richness) used ONLY for ranking.
+    # Never displayed — match_percentage is the honest weighted-coverage number.
+    ranking_score: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -156,12 +160,21 @@ class JobAnalysisAgent:
             description=internship.description,
         )
 
+        # Classify skills by importance for weighted scoring.
+        # Returns {skill_name: weight_int} using SKILL_WEIGHTS tiers.
+        skill_weights = SkillClassifier().classify(
+            skills=required_skills,
+            domain=domain,
+            title=internship.title or "",
+        )
+
         return {
             "internship_id": internship.id,
             "required_skills": required_skills,
             "seniority_level": seniority_level,   # now actually inferred, not hardcoded
             "domain": domain,
             "context_text": context_text,
+            "skill_weights": skill_weights,       # {skill_name: int} for weighted scoring
         }
 
     def _infer_seniority(self, title: str, description: str) -> float:
@@ -266,8 +279,11 @@ class MatchScoringAgent:
             cache=cache,
         )
 
-        skill_coverage     = self._compute_skill_coverage(required_skills, matched_skills)
-        skill_depth        = self._compute_skill_depth(user_profile, matched_skills, required_skills, cache)
+        # Weighted scoring: pull per-skill weights set by JobAnalysisAgent
+        skill_weights = job_analysis.get("skill_weights", {})
+
+        skill_coverage     = self._compute_skill_coverage(required_skills, matched_skills, skill_weights)
+        skill_depth        = self._compute_skill_depth(user_profile, matched_skills, required_skills, skill_weights, cache)
         domain_alignment   = self._compute_domain_alignment(user_profile, job_analysis, matched_skills, cache)
         seniority_alignment = self._compute_seniority_alignment(user_profile, job_analysis)
 
@@ -278,11 +294,16 @@ class MatchScoringAgent:
             + domain_alignment     * self.weights["domain_alignment"]
             + seniority_alignment  * self.weights["seniority_alignment"]
         )
-        composite_score = round(self._clamp(composite_score), 4)
+        composite_score = self._clamp(composite_score)  # no rounding — full precision stored
 
         return {
             "internship_id": int(job_analysis.get("internship_id", 0)),
             "composite_score": composite_score,
+            # skill_coverage is the DISPLAYED match number (× 100). It is weighted
+            # matched/total — honest, real-skill-overlap. The composite above is
+            # used ONLY as a ranking tiebreaker, never shown. Kept unrounded here
+            # so match_percentage carries full precision.
+            "skill_coverage": skill_coverage,
             "signal_breakdown": {
                 "semantic_similarity": round(semantic_similarity, 4),
                 "skill_coverage":      round(skill_coverage, 4),
@@ -333,23 +354,44 @@ class MatchScoringAgent:
         return matched, missing
 
     def _compute_skill_coverage(
-        self, required_skills: List[str], matched_skills: List[str]
+        self,
+        required_skills: List[str],
+        matched_skills: List[str],
+        skill_weights: Dict[str, int],
     ) -> float:
+        """
+        Weighted skill coverage: sum-of-matched-weights / sum-of-all-weights.
+
+        A job requiring python (core=5) + react (core=5) + git (optional=1)
+        has total_weight=11. Matching python+react gives 10/11 ≈ 0.91,
+        far better than matching git+react (1+5=6/11 ≈ 0.55).
+        Flat count would give 2/3 ≈ 0.67 for BOTH — this is the fix.
+        """
         if not required_skills:
             return 0.0
-        return len(matched_skills) / len(required_skills)
+        fallback = SKILL_WEIGHTS["important"]
+        total_w   = sum(skill_weights.get(s, fallback) for s in required_skills)
+        if total_w == 0:
+            return 0.0
+        matched_w = sum(skill_weights.get(s, fallback) for s in matched_skills)
+        return min(1.0, matched_w / total_w)
 
     def _compute_skill_depth(
         self,
         user_profile: Dict[str, Any],
         matched_skills: List[str],
         required_skills: List[str],
+        skill_weights: Dict[str, int],
         cache: EmbeddingCache,
     ) -> float:
         if not matched_skills or not required_skills:
             return 0.0
 
-        matched_ratio    = len(matched_skills) / len(required_skills)
+        # Use weighted ratio so matching core skills boosts depth more than optionals
+        fallback = SKILL_WEIGHTS["important"]
+        total_w   = sum(skill_weights.get(s, fallback) for s in required_skills)
+        matched_w = sum(skill_weights.get(s, fallback) for s in matched_skills)
+        matched_ratio = (matched_w / total_w) if total_w > 0 else 0.0
         experience_years = float(user_profile.get("experience_years", 0.0))
         project_relevance = self._compute_project_relevance(user_profile, required_skills, cache)
         experience_factor = min(1.0, experience_years / max(1.0, len(required_skills)))
@@ -637,16 +679,20 @@ Return ONLY valid JSON, no markdown fences:
 
 def _derive_match_label(score: float) -> str:
     """
-    Generate a match label from the composite score.
-    Thresholds are still involved but they drive a label, not a gate.
+    Generate a match label from the composite score (0-1 scale).
+
+    CANONICAL thresholds — must stay in sync with
+    routes/recommendations.py::_derive_match_label (which operates on the
+    same score expressed as 0-100). Both express identical semantics:
+        >=0.80 Excellent | >=0.70 Strong | >=0.60 Good | >=0.50 Partial | else Low
     """
     if score >= 0.80:
         return "Excellent Match"
-    if score >= 0.65:
+    if score >= 0.70:
         return "Strong Match"
-    if score >= 0.50:
+    if score >= 0.60:
         return "Good Match"
-    if score >= 0.35:
+    if score >= 0.50:
         return "Partial Match"
     return "Low Match"
 
@@ -657,6 +703,318 @@ def _derive_match_label(score: float) -> str:
 
 def _normalize(value: Any) -> str:
     return str(value).strip().lower() if value is not None else ""
+
+
+# ---------------------------------------------------------------------------
+# Skill weighting constants
+# ---------------------------------------------------------------------------
+
+SKILL_WEIGHTS: Dict[str, int] = {
+    "core":      5,
+    "important": 3,
+    "optional":  1,
+}
+
+# ---------------------------------------------------------------------------
+# CANONICAL match thresholds (0-100 coverage scale)
+# ---------------------------------------------------------------------------
+# match_percentage is weighted skill coverage × 100. These thresholds are the
+# SINGLE definition of High/Medium/Low + the alert gate, imported by the routes
+# so every surface (stats counter, job alerts, labels) agrees. Do not fork them.
+HIGH_MATCH_THRESHOLD    = 75.0   # High Match  (item #4): score >= 75
+MEDIUM_MATCH_THRESHOLD  = 50.0   # Medium      (item #4): 50 <= score < 75
+STRONG_MATCH_THRESHOLD  = 70.0   # job-alert gate + "you meet core reqs" copy (item #3)
+ALL_MATCHED_THRESHOLD   = 90.0   # "All required skills matched" (item #2)
+
+
+# ---------------------------------------------------------------------------
+# SkillClassifier — classify job skills at score time (no schema change)
+#
+# WHY: InternshipSkill rows have no importance field. Rather than requiring
+# a migration and re-scrape, we classify skills at scoring time using:
+#   1. Title signal — a skill in the job title is always core
+#   2. Domain signal — known central skills per domain are core
+#   3. Peripheral heuristics — soft/tooling skills are optional
+#   4. Everything else — important (middle tier)
+# ---------------------------------------------------------------------------
+
+class SkillClassifier:
+    """
+    Classifies a job's required skills into core / important / optional
+    and returns the corresponding integer weight per SKILL_WEIGHTS.
+
+    Usage:
+        weights = SkillClassifier().classify(skills, domain="frontend", title="React Intern")
+        # {"react": 5, "css": 5, "node.js": 3, "git": 1, ...}
+    """
+
+    # Skills that are structurally central to each domain.
+    # A skill matching any entry here gets "core" weight.
+    _DOMAIN_CORE: Dict[str, set] = {
+        "ai_ml":    {
+            "python", "machine learning", "deep learning", "pytorch", "tensorflow",
+            "scikit-learn", "keras", "nlp", "computer vision", "hugging face",
+            "llm", "transformers", "neural network",
+        },
+        "frontend": {
+            "react", "vue", "angular", "javascript", "typescript",
+            "html", "css", "next.js", "svelte", "tailwind",
+        },
+        "backend":  {
+            "python", "java", "node.js", "django", "fastapi", "flask",
+            "spring", "express", "go", "rust", "ruby on rails", "graphql",
+            "rest api", "microservices",
+        },
+        "devops":   {
+            "docker", "kubernetes", "aws", "gcp", "azure", "terraform",
+            "ci/cd", "linux", "ansible", "helm", "jenkins",
+        },
+        "data":     {
+            "python", "sql", "pandas", "spark", "hadoop", "dbt",
+            "data analysis", "etl", "tableau", "power bi", "airflow",
+        },
+        "mobile":   {
+            "android", "ios", "flutter", "react native", "swift", "kotlin",
+            "xcode", "android studio",
+        },
+        "security": {
+            "cybersecurity", "penetration testing", "soc", "siem",
+            "network security", "ethical hacking", "vulnerability assessment",
+        },
+    }
+
+    # Skills that are always peripheral — tooling, soft skills, process.
+    # These default to "optional" regardless of domain.
+    _OPTIONAL: frozenset = frozenset({
+        "git", "github", "gitlab", "bitbucket",
+        "jira", "confluence", "trello", "notion", "slack",
+        "agile", "scrum", "kanban",
+        "communication", "teamwork", "leadership", "problem solving",
+        "time management", "presentation", "documentation",
+        "ms office", "excel", "powerpoint", "word",
+        "linux", "bash", "shell scripting",   # tooling; overridden to core for devops
+    })
+
+    def classify(
+        self,
+        skills: List[str],
+        domain: str,
+        title: str,
+    ) -> Dict[str, int]:
+        """
+        Returns {normalised_skill_name: weight_int} for every skill in `skills`.
+        Weights are drawn from SKILL_WEIGHTS (core=5, important=3, optional=1).
+        """
+        title_lower = _normalize(title)
+        domain_cores = self._DOMAIN_CORE.get(domain, set())
+
+        result: Dict[str, int] = {}
+        for skill in skills:
+            skill_n = _normalize(skill)
+            if skill_n in title_lower or skill_n in domain_cores:
+                tier = "core"
+            elif skill_n in self._OPTIONAL and domain != "devops":
+                # linux/bash are core for devops; optional elsewhere
+                tier = "optional"
+            else:
+                tier = "important"
+            result[skill_n] = SKILL_WEIGHTS[tier]
+
+        return result
+
+    def total_weight(self, skills: List[str], weights: Dict[str, int]) -> int:
+        return sum(weights.get(_normalize(s), SKILL_WEIGHTS["important"]) for s in skills)
+
+    def matched_weight(self, matched: List[str], weights: Dict[str, int]) -> int:
+        return sum(weights.get(_normalize(s), SKILL_WEIGHTS["important"]) for s in matched)
+
+
+# ---------------------------------------------------------------------------
+# BehaviorProfile — derived from saved / applied internship history
+#
+# WHY: A user who has saved 10 React jobs and applied to 3 of them is
+# clearly interested in frontend roles. Pure resume matching can't capture
+# this intent signal — it only knows what the user has done, not what they
+# want to do next. BehaviorProfile extracts that latent preference and feeds
+# it into the ranking boost.
+# ---------------------------------------------------------------------------
+
+# Maximum boost added to a composite score (0-1 scale).
+# 0.08 = 8 percentage points — enough to reorder near-ties without letting a
+# weak base score leap into a higher label tier.
+BEHAVIOR_MAX_BOOST: float = 0.08
+
+# Minimum number of behavioral signals (saves + applications) before any boost
+# is applied. Prevents a single accidental bookmark from distorting rankings.
+BEHAVIOR_MIN_SIGNALS: int = 2
+
+# Minimum signals needed for full confidence. Confidence scales linearly
+# from 0 at MIN_SIGNALS up to 1.0 at CONFIDENCE_SCALE_SIGNALS.
+BEHAVIOR_CONFIDENCE_SCALE: int = 10
+
+
+@dataclass
+class BehaviorProfile:
+    """
+    Summarises a user's internship interaction history as a skill-frequency map.
+
+    Attributes:
+        skill_weights   Normalised per-skill frequency (0-1, sums to 1.0).
+                        Derived from skills of saved/applied internships with
+                        status weighting (applied/offer/interview → 2×, saved → 1×).
+        dominant_skills Top-N skill names by frequency — used for fast lookup.
+        total_signals   Raw count of internships that contributed (saves + apps).
+        has_data        False when the user has no save/apply history yet.
+    """
+    skill_weights:   Dict[str, float]
+    dominant_skills: set
+    total_signals:   int
+    has_data:        bool
+
+    @classmethod
+    def empty(cls) -> "BehaviorProfile":
+        return cls(skill_weights={}, dominant_skills=set(), total_signals=0, has_data=False)
+
+
+class BehaviorProfileBuilder:
+    """
+    Builds a BehaviorProfile from a user's application history in one DB query.
+
+    Status weighting rationale:
+      • applied / interview / offer  → weight 2  (user committed action)
+      • saved / rejected / withdrawn → weight 1  (expressed interest)
+
+    This means a job the user actually applied to contributes twice as much
+    to the skill signal as one they merely bookmarked.
+    """
+
+    # How much each status contributes to the skill signal
+    STATUS_WEIGHTS: Dict[str, int] = {
+        "applied":   2,
+        "interview": 2,
+        "offer":     2,
+        "saved":     1,
+        "rejected":  1,
+        "withdrawn": 1,
+    }
+
+    def __init__(self, db: Session):
+        self._db = db
+
+    def build(self, user_id: int) -> BehaviorProfile:
+        """
+        Returns a BehaviorProfile for user_id.
+        Falls back to BehaviorProfile.empty() if no history exists or on error.
+        """
+        try:
+            return self._build(user_id)
+        except Exception as exc:
+            logger.warning(
+                "behavior_profile.build_failed user_id=%d error=%s", user_id, exc
+            )
+            return BehaviorProfile.empty()
+
+    def _build(self, user_id: int) -> BehaviorProfile:
+        # Single query: join applications → internship_skills, aggregate by skill
+        rows = self._db.execute(
+            text("""
+                SELECT
+                    s.skill_name,
+                    SUM(
+                        CASE a.status
+                            WHEN 'applied'   THEN 2
+                            WHEN 'interview' THEN 2
+                            WHEN 'offer'     THEN 2
+                            ELSE 1
+                        END
+                    ) AS weighted_freq
+                FROM applications a
+                JOIN internship_skills s ON s.internship_id = a.internship_id
+                WHERE a.user_id = :uid
+                  AND a.status IN ('saved','applied','interview','offer','rejected','withdrawn')
+                GROUP BY s.skill_name
+                ORDER BY weighted_freq DESC
+                LIMIT 50
+            """),
+            {"uid": user_id},
+        ).fetchall()
+
+        if not rows:
+            return BehaviorProfile.empty()
+
+        # Count raw interaction signals (deduplicated internship count)
+        total_signals = self._db.execute(
+            text("""
+                SELECT COUNT(DISTINCT internship_id)
+                FROM applications
+                WHERE user_id = :uid
+                  AND status IN ('saved','applied','interview','offer','rejected','withdrawn')
+            """),
+            {"uid": user_id},
+        ).scalar() or 0
+
+        if total_signals < BEHAVIOR_MIN_SIGNALS:
+            return BehaviorProfile.empty()
+
+        # Normalise weighted frequencies to [0, 1]
+        raw: Dict[str, float] = {
+            _normalize(row[0]): float(row[1]) for row in rows if row[0]
+        }
+        max_freq = max(raw.values()) if raw else 1.0
+        skill_weights = {skill: freq / max_freq for skill, freq in raw.items()}
+
+        dominant_skills = set(list(skill_weights.keys())[:10])  # top-10 skills
+
+        logger.info(
+            "behavior_profile.built user_id=%d signals=%d unique_skills=%d dominant=%s",
+            user_id, total_signals, len(skill_weights),
+            ", ".join(list(dominant_skills)[:5]),
+        )
+
+        return BehaviorProfile(
+            skill_weights=skill_weights,
+            dominant_skills=dominant_skills,
+            total_signals=total_signals,
+            has_data=True,
+        )
+
+
+def _compute_behavior_boost(
+    required_skills: List[str],
+    behavior_profile: BehaviorProfile,
+) -> float:
+    """
+    Compute a ranking boost [0, BEHAVIOR_MAX_BOOST] based on how well a
+    job's required skills overlap with the user's behavioral skill signal.
+
+    Args:
+        required_skills:  Normalised required skills for the internship.
+        behavior_profile: Pre-built BehaviorProfile for the user.
+
+    Returns:
+        Float in [0, BEHAVIOR_MAX_BOOST].
+    """
+    if not behavior_profile.has_data or not required_skills:
+        return 0.0
+
+    # Overlap: sum of behavior weights for skills that appear in required_skills
+    overlap = sum(
+        behavior_profile.skill_weights.get(s, 0.0)
+        for s in required_skills
+    )
+
+    # Normalise by the number of required skills (so longer skill lists
+    # don't automatically score lower — we care about the density of overlap)
+    overlap_ratio = min(1.0, overlap / len(required_skills))
+
+    # Confidence scales up to 1.0 at BEHAVIOR_CONFIDENCE_SCALE signals
+    confidence = min(
+        1.0,
+        (behavior_profile.total_signals - BEHAVIOR_MIN_SIGNALS)
+        / max(1, BEHAVIOR_CONFIDENCE_SCALE - BEHAVIOR_MIN_SIGNALS),
+    )
+
+    return BEHAVIOR_MAX_BOOST * overlap_ratio * confidence
 
 
 # ---------------------------------------------------------------------------
@@ -691,6 +1049,14 @@ class RecommendationEngine:
         cache.get_many(user_skill_texts)
         logger.info("recommendation_engine.cache_warmed skills=%d", len(user_skill_texts))
 
+        # Build behavior profile once — reused for every internship's boost computation
+        behavior_profile = BehaviorProfileBuilder(self.db).build(user_id)
+        if behavior_profile.has_data:
+            logger.info(
+                "recommendation_engine.behavior_profile_loaded user_id=%d signals=%d",
+                user_id, behavior_profile.total_signals,
+            )
+
         internships = self._fetch_active_internships()
 
         # PERF: fetch ALL embedding similarities in ONE query instead of 1-per-internship
@@ -714,6 +1080,17 @@ class RecommendationEngine:
             if scored["composite_score"] <= 0:
                 continue
 
+            # Apply behavior boost — boosts jobs whose required skills
+            # match the user's save/apply history. Clamped to [0, 1].
+            boost      = _compute_behavior_boost(required_skills, behavior_profile)
+            final_score = self.scoring_agent._clamp(scored["composite_score"] + boost)
+
+            # DISPLAYED match = weighted skill coverage (real matched/total), NOT
+            # the composite. This is the honest number: 1 matched skill out of many
+            # scores low, never floats to 56% off semantic/domain signal. The
+            # composite (final_score) is kept only as the ranking key below.
+            display_pct = round(self.scoring_agent._clamp(scored["skill_coverage"]) * 100, 1)
+
             results.append(
                 InternshipRecommendation(
                     internship_id=internship.id,
@@ -722,19 +1099,36 @@ class RecommendationEngine:
                     location=internship.location,
                     application_url=internship.application_url,
                     similarity_score=scored["signal_breakdown"]["semantic_similarity"],
-                    match_percentage=round(scored["composite_score"] * 100, 1),
+                    match_percentage=display_pct,
                     matched_skills=scored["matched_skills"],
                     missing_skills=scored["missing_skills"],
-                    match_label=_derive_match_label(scored["composite_score"]),  # FIX: derived
+                    # Label derives from the DISPLAYED number (0-100) so chip and %
+                    # never contradict each other.
+                    match_label=_derive_match_label(display_pct / 100.0),
+                    # Ranking key: full composite + behavior boost (not displayed).
+                    ranking_score=final_score,
                 )
             )
 
-        results.sort(key=lambda r: r.match_percentage, reverse=True)
+        # Rank by the composite tiebreaker (semantic/domain/behavior richness),
+        # NOT by the displayed coverage %, so ordering keeps its nuance while the
+        # shown number stays honest.
+        results.sort(key=lambda r: getattr(r, "ranking_score", r.match_percentage / 100.0), reverse=True)
         results = results[: min(limit, self.TOP_N)]
         self._persist_recommendations(user_id, results)
         return results
 
     def refresh_for_user(self, user_id: int) -> dict:
+        # Per-user advisory lock — prevents two concurrent refresh calls for the
+        # same user from racing on DELETE + INSERT and hitting the unique constraint.
+        # pg_try_advisory_xact_lock is non-blocking and auto-released on commit/rollback.
+        lock_acquired = self.db.execute(
+            text("SELECT pg_try_advisory_xact_lock(:key)"),
+            {"key": user_id},
+        ).scalar()
+        if not lock_acquired:
+            return {"recommendations": 0, "skipped": True}
+
         resume = self.db.query(Resume).filter(Resume.user_id == user_id).first()
         if not resume:
             return {"recommendations": 0}
@@ -746,6 +1140,16 @@ class RecommendationEngine:
         user_skill_texts = [_normalize(s.get("name")) for s in user_profile.get("skills", []) if s.get("name")]
         cache.get_many(user_skill_texts)
 
+        # Behavior profile: built BEFORE the DELETE so existing rows still
+        # exist in applications — the profile itself isn't affected by the
+        # recommendation delete that follows.
+        behavior_profile = BehaviorProfileBuilder(self.db).build(user_id)
+        if behavior_profile.has_data:
+            logger.info(
+                "refresh.behavior_profile_loaded user_id=%d signals=%d",
+                user_id, behavior_profile.total_signals,
+            )
+
         internships = self._fetch_top_internships_for_refresh(user_id)
         self.db.query(Recommendation).filter(Recommendation.user_id == user_id).delete()
 
@@ -754,6 +1158,13 @@ class RecommendationEngine:
         similarity_map = self._fetch_embedding_similarities_batch(user_id, internship_ids)
 
         count = 0
+        # Collect high-match internships for job-alert notifications (generated after commit).
+        # Tuple: (internship_id, title, company, pct, matched_skills)
+        _high_match: list[tuple[int, str, str, float, list[str]]] = []
+        # Scored rows buffered so we can rank by composite before persisting.
+        # Tuple: (internship, display_pct, ranking_score, matched_skills, scored_dict)
+        _scored_rows: list = []
+
         for internship in internships:
             required_skills      = self._get_required_skills(internship)
             job_analysis         = self.job_agent.analyze(internship, required_skills)
@@ -768,17 +1179,69 @@ class RecommendationEngine:
             if scored["composite_score"] <= 0:
                 continue
 
+            boost       = _compute_behavior_boost(required_skills, behavior_profile)
+            final_score = self.scoring_agent._clamp(scored["composite_score"] + boost)
+            # DISPLAYED match = weighted skill coverage (real matched/total).
+            # The composite (final_score) is used only to rank; it is NOT stored
+            # as the shown percentage.
+            pct         = round(self.scoring_agent._clamp(scored["skill_coverage"]) * 100, 1)
+            matched     = scored["matched_skills"]
+            _scored_rows.append((internship, pct, final_score, matched, scored))
+
+        # Rank by the composite tiebreaker, then persist — so ordering keeps its
+        # semantic/behavior nuance while the stored % stays honest coverage.
+        _scored_rows.sort(key=lambda t: t[2], reverse=True)
+
+        for internship, pct, _rank, matched, scored in _scored_rows:
             self.db.add(
                 Recommendation(
                     user_id=user_id,
                     internship_id=internship.id,
                     similarity_score=scored["signal_breakdown"]["semantic_similarity"],
-                    match_percentage=round(scored["composite_score"] * 100, 1),
+                    match_percentage=pct,
+                    # Persist the SAME semantic matched/missing the score was built from,
+                    # so read paths return them verbatim (no recompute, no drift).
+                    matched_skills=matched,
+                    missing_skills=scored["missing_skills"],
                 )
             )
             count += 1
 
+            # Collect jobs at or above the "Strong Match" threshold for job alerts.
+            # STRONG_MATCH_THRESHOLD is on the same 0-100 coverage scale as pct.
+            if pct >= STRONG_MATCH_THRESHOLD:
+                _high_match.append((
+                    internship.id,
+                    internship.title or "",
+                    internship.company or "",
+                    pct,
+                    matched,
+                ))
+
         self.db.commit()
+
+        # ── Generate job-alert notifications (best-effort, never fails the refresh) ──
+        if _high_match:
+            try:
+                from app.services.notification_service import NotificationService
+                notif_service = NotificationService(self.db)
+                created = 0
+                for iid, title, company, pct, matched_skills in _high_match:
+                    if notif_service.create_job_alert_if_new(
+                        user_id=user_id,
+                        internship_id=iid,
+                        title=title,
+                        company=company,
+                        match_pct=pct,
+                        matched_skills=matched_skills,
+                    ):
+                        created += 1
+                if created:
+                    logger.info("job_alerts.created user_id=%d count=%d", user_id, created)
+            except Exception as exc:
+                logger.error("job_alerts.trigger_failed user_id=%d error=%s", user_id, exc)
+                # Never crash the refresh because notification creation failed.
+
         return {"recommendations": count}
 
     # ------------------------------------------------------------------
@@ -789,7 +1252,16 @@ class RecommendationEngine:
         return self.db.query(Internship).filter(Internship.is_active == True).all()
 
     def _get_required_skills(self, internship: Internship) -> List[str]:
-        """Consolidate skills from InternshipSkill table + internship.required_skills field."""
+        """Consolidate skills from InternshipSkill table + internship.required_skills field.
+
+        Then apply STACK FILTERING: if the job clearly targets one backend stack
+        (e.g. Python), drop skills that belong to competing stacks (java, spring,
+        express, go...). Those almost always come from noisy scrapes — a single
+        job rarely requires Django AND Spring AND Express together. Filtering here
+        (at the source) means the cleaned list flows into scoring AND the stored
+        matched/missing skills, so every downstream surface (card, skill-gap,
+        explain) shows a relevant, non-contradictory skill set.
+        """
         # Using .all() with scalar column query returns list of single-value tuples in SA 1.x
         # We unpack with [row[0]] pattern to stay compatible with both SA 1.x and 2.x
         rows = (
@@ -805,7 +1277,23 @@ class RecommendationEngine:
             skills.extend(_normalize(s) for s in internship.required_skills if s)
 
         # Deduplicate while preserving order
-        return list(dict.fromkeys(s for s in skills if s))
+        skills = list(dict.fromkeys(s for s in skills if s))
+
+        # Stack-aware filtering — remove alternative-stack noise.
+        try:
+            from app.services.role_stack import detect_stack, filter_relevant_skills
+            stack_type, _ = detect_stack(
+                title=internship.title or "",
+                description=internship.description or "",
+                skills=skills,
+            )
+            if stack_type:
+                skills = filter_relevant_skills(skills, stack_type)
+        except Exception as exc:  # never let filtering break scoring
+            logger.warning("required_skills.stack_filter_failed id=%s error=%s", internship.id, exc)
+
+        return skills
+
 
     def _build_user_profile(self, user_id: int) -> Dict[str, Any]:
         skills      = self.db.query(Skill).filter(Skill.user_id == user_id).all()
@@ -920,6 +1408,8 @@ class RecommendationEngine:
             if record:
                 record.similarity_score = rec.similarity_score
                 record.match_percentage = rec.match_percentage
+                record.matched_skills = rec.matched_skills
+                record.missing_skills = rec.missing_skills
                 self.db.add(record)
             else:
                 self.db.add(
@@ -928,6 +1418,8 @@ class RecommendationEngine:
                         internship_id=rec.internship_id,
                         similarity_score=rec.similarity_score,
                         match_percentage=rec.match_percentage,
+                        matched_skills=rec.matched_skills,
+                        missing_skills=rec.missing_skills,
                     )
                 )
         self.db.commit()

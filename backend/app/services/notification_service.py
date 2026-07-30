@@ -79,5 +79,63 @@ class NotificationService:
         )
 
 
+    def create_job_alert_if_new(
+        self,
+        user_id: int,
+        internship_id: int,
+        title: str,
+        company: str,
+        match_pct: float,
+        matched_skills: list[str] | None = None,
+    ) -> bool:
+        """
+        Create a job-alert notification for a high-match internship.
+
+        Deduplicates by internship ID (type = "job_alert:{internship_id}") so
+        that the check is immune to title/company changes on re-scrape.
+        One alert per user per internship, ever.
+        Returns True if a new notification was created, False if one already exists.
+
+        This is intentionally called AFTER the recommendation commit so the
+        notification batch can be rolled back independently without breaking
+        the recommendation data.
+        """
+        # Stable, internship-scoped type key — immune to title/company renames.
+        alert_type = f"job_alert:{internship_id}"
+
+        existing = (
+            self.db.execute(
+                select(Notification).where(
+                    Notification.user_id == user_id,
+                    Notification.type == alert_type,
+                )
+            )
+            .scalar_one_or_none()
+        )
+        if existing:
+            return False
+
+        label = "Excellent" if match_pct >= 80 else "Strong" if match_pct >= 70 else "Good"
+        notif_title = f"New Match: {title} at {company}"
+
+        # Build message — include top matched skills when available.
+        skills_snippet = ""
+        if matched_skills:
+            top = matched_skills[:4]
+            skills_snippet = f" Matched skills: {', '.join(top)}."
+
+        message = (
+            f"{label} match ({match_pct:.0f}%) — {title} at {company} looks like a "
+            f"great fit for your profile.{skills_snippet} Check it out on the Internships page."
+        )
+        self.create_notification(
+            user_id=user_id,
+            type=alert_type,
+            title=notif_title,
+            message=message,
+        )
+        return True
+
+
 def create_notification(db: Session, user_id: int, type: str, title: str, message: str) -> Notification:
-    return NotificationService(db).create_notification(user_id, type, title, message)
+    return NotificationService(db).create_notification(user_id, type, title, message)

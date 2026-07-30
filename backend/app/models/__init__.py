@@ -9,7 +9,10 @@ from app.models.cover_letter_draft import CoverLetterDraft  # noqa: F401
 from app.models.builder_session import BuilderSession  # noqa: F401
 from app.models.resume_version import ResumeVersion  # noqa: F401
 from app.models.education import Education  # noqa: F401
+from app.models.eval_case import EvalCase  # noqa: F401
 from app.models.experience import Experience  # noqa: F401
+from app.models.explanation_cache import ExplanationCache  # noqa: F401
+from app.models.interaction_event import InteractionEvent  # noqa: F401
 from app.models.internship import Internship  # noqa: F401
 from app.models.internship_skill import InternshipSkill  # noqa: F401
 from app.models.interview_answer import InterviewAnswer  # noqa: F401

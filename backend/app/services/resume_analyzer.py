@@ -60,16 +60,47 @@ class ResumeAnalyzer:
     @staticmethod
     def _extract_text(file_bytes: bytes, file_type: str) -> str:
         if file_type == "pdf":
-            return ResumeAnalyzer._extract_pdf(file_bytes)
-        if file_type == "docx":
-            return ResumeAnalyzer._extract_docx(file_bytes)
-        raise ValueError("Unsupported file type")
+            raw = ResumeAnalyzer._extract_pdf(file_bytes)
+        elif file_type == "docx":
+            raw = ResumeAnalyzer._extract_docx(file_bytes)
+        else:
+            raise ValueError("Unsupported file type")
+        # Normalize spacing / hyphenation before any downstream parsing.
+        from app.services.text_normalizer import normalize_resume_text
+        return normalize_resume_text(raw)
 
     @staticmethod
     def _extract_pdf(file_bytes: bytes) -> str:
+        """
+        Reconstruct text from positioned WORDS rather than extract_text().
+
+        extract_text() frequently drops spaces between glyphs, producing merged
+        words like "Engineeredamulti-turnconversationalsystem". extract_words()
+        tokenizes by position, so joining tokens with a single space guarantees
+        readable spacing. Falls back to extract_text() if word extraction fails.
+        """
+        from collections import defaultdict
         try:
             with pdfplumber.open(BytesIO(file_bytes)) as pdf:
-                return "\n".join(page.extract_text() or "" for page in pdf.pages)
+                page_texts = []
+                for page in pdf.pages:
+                    try:
+                        words = page.extract_words(use_text_flow=True, keep_blank_chars=False)
+                    except Exception:
+                        words = []
+                    if words:
+                        # Group words into visual lines by their vertical position.
+                        rows: dict = defaultdict(list)
+                        for w in words:
+                            rows[round(float(w["top"]))].append(w)
+                        line_strs = []
+                        for top in sorted(rows):
+                            row = sorted(rows[top], key=lambda w: float(w["x0"]))
+                            line_strs.append(" ".join(w["text"] for w in row))
+                        page_texts.append("\n".join(line_strs))
+                    else:
+                        page_texts.append(page.extract_text() or "")
+                return "\n".join(page_texts)
         except Exception as exc:
             raise ValueError("Corrupted PDF file") from exc
 
@@ -191,14 +222,59 @@ class ResumeAnalyzer:
         certifications: list[str],
         missing_sections: list[str],
     ) -> int:
-        score = 0
-        score += min(len(skills) * 3, 30)
-        score += 15 if education else 0
-        score += 20 if experience else 0
-        score += 10 if projects else 0
-        score += 10 if certifications else 0
-        score += 15 if not missing_sections else max(0, 15 - len(missing_sections) * 2)
-        return min(score, 100)
+        # ── Skills quality (0–35) ─────────────────────────────────────────────
+        skill_count = len(skills)
+        if skill_count >= 12:
+            skills_score = 35
+        elif skill_count >= 8:
+            skills_score = 28
+        elif skill_count >= 5:
+            skills_score = 20
+        elif skill_count >= 2:
+            skills_score = 10
+        else:
+            skills_score = 0
+
+        # ── Section presence (0–30) ───────────────────────────────────────────
+        section_score = (
+            (10 if education else 0)
+            + (12 if experience else 0)
+            + (8 if projects else 0)
+        )
+
+        # ── Content quality (0–25) ────────────────────────────────────────────
+        # Check for quantification (numbers) and strong action verbs in bullets.
+        # These lines come from _split_lines so they still include titles/dates,
+        # but any number (year counts) and any action verb (first word) still
+        # provides a useful signal at section-level granularity.
+        all_lines = experience + projects
+        _STRONG_VERBS = {
+            "built", "designed", "implemented", "developed", "created", "led",
+            "engineered", "architected", "automated", "optimized", "deployed",
+            "launched", "shipped", "improved", "reduced", "delivered",
+            "streamlined", "integrated", "migrated", "refactored", "scaled",
+        }
+        has_numbers = any(
+            any(ch.isdigit() for ch in line) for line in all_lines
+        )
+        has_action_verb = any(
+            line.split()[0].lower().rstrip(".,") in _STRONG_VERBS
+            for line in all_lines
+            if line.split()
+        )
+        quality_score = (
+            (12 if has_numbers else 0)
+            + (8 if has_action_verb else 0)
+            + (5 if certifications else 0)
+        )
+
+        total = skills_score + section_score + quality_score
+        # Completeness penalty — capped at –10 so a missing cert doesn't crater
+        # an otherwise strong resume.
+        penalty = min(len(missing_sections) * 2, 10)
+        # Hard ceiling at 92: a perfect 100 requires signals (LinkedIn, portfolio,
+        # references) we don't validate. This keeps the score credible.
+        return min(max(0, total - penalty), 92)
 
     @staticmethod
     def _persist(db, user_id: int, resume_id: str, analysis: dict[str, Any]) -> None:

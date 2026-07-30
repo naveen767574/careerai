@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
 
@@ -9,13 +9,16 @@ class RecommendationItem(BaseModel):
     company: str
     location: str
     application_url: str
+    source: str = ""
     similarity_score: float
-    match_percentage: float       # raw composite score × 100 (stored in DB, used for sorting)
-    display_score: float          # normalized score for UI display (50–100 range, like LinkedIn)
+    match_percentage: float
+    display_score: float
     matched_skills: list[str]
     missing_skills: list[str]
     match_label: str
-    signal_breakdown: Optional[dict] = None  # per-dimension scores, shown in detail view
+    signal_breakdown: Optional[dict] = None
+    # Added: lets the frontend compute "New This Week" without a separate call
+    internship_created_at: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -24,7 +27,7 @@ class RecommendationItem(BaseModel):
 class RecommendationsResponse(BaseModel):
     recommendations: list[RecommendationItem]
     total: int
-    generated_at: str             # ISO string — simpler than datetime for frontend
+    generated_at: str
 
 
 class RefreshResponse(BaseModel):
@@ -33,19 +36,15 @@ class RefreshResponse(BaseModel):
     message: str
 
 
-# ---------------------------------------------------------------------------
-# Skill Gap schemas — for the new GET /recommendations/skill-gap endpoint
-# ---------------------------------------------------------------------------
-
 class SkillGapItem(BaseModel):
-    skill: str                    # skill name the user is missing
-    frequency: int                # how many of their top matches require this skill
-    relevance: float              # average match score of jobs requiring this skill (0–1)
-    priority: str                 # "High" / "Medium" / "Low" — based on frequency + relevance
+    skill: str
+    frequency: int
+    relevance: float
+    priority: str
 
 
 class SkillGapResponse(BaseModel):
-    missing_skills: list[SkillGapItem]   # ranked by priority
-    strong_skills: list[str]             # skills user already has that appear in top matches
-    top_match_count: int                 # how many recommendations were analyzed
-    message: str                         # human-readable summary
+    missing_skills: list[SkillGapItem]
+    strong_skills: list[str]
+    top_match_count: int
+    message: str

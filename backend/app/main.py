@@ -9,6 +9,7 @@ from sqlalchemy import text
 from app.database import get_db
 from app.config import settings
 from app.database import Base, engine
+from app.services import scraper_scheduler
 
 # Import models so SQLAlchemy metadata includes all tables before create_all()
 import app.models  # noqa: F401
@@ -117,6 +118,8 @@ def preload_embedding_model():
         print(f"Warning: embedding model preload failed: {e}")
 
 
+
+
 @app.on_event("startup")
 async def startup_event():
     # Run scraper check in background thread (may take time, shouldn't block startup)
@@ -127,6 +130,9 @@ async def startup_event():
     # but model is ready well before the first user request arrives
     model_thread = threading.Thread(target=preload_embedding_model, daemon=True)
     model_thread.start()
+
+    # 24-hour scraper scheduler (hardened: lock, retry/backoff, misfire recovery)
+    scraper_scheduler.start()
 
 
 @app.get("/health")
@@ -144,9 +150,17 @@ def health_check(db: Session = Depends(get_db)):
     except Exception:
         model_status = "unknown"
 
+    sched_status = scraper_scheduler.get_status()
     return {
         "status": "healthy",
         "database": db_status,
         "embedding_model": model_status,
+        "scheduler": {
+            "is_running": sched_status["is_running"],
+            "last_run_at": sched_status["last_run_at"],
+            "total_runs": sched_status["total_runs"],
+            "total_failures": sched_status["total_failures"],
+            "last_error": sched_status["last_error"],
+        },
         "version": "1.0.0",
     }

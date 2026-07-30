@@ -7,6 +7,7 @@ from app.models.internship import Internship
 from app.schemas.application import (
     ApplicationCreate, ApplicationUpdate, ApplicationOut, ApplicationListResponse
 )
+from app.services.event_logger import log_event, EVENT_APPLICATION_STATUS_CHANGED
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 
@@ -87,7 +88,9 @@ def update_application(
         raise HTTPException(status_code=403, detail="Not yours")
     if body.status and body.status not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {VALID_STATUSES}")
-    if body.status:
+    status_changed_from = None
+    if body.status and body.status != app.status:
+        status_changed_from = app.status
         app.status = body.status
     if body.notes is not None:
         app.notes = body.notes
@@ -95,6 +98,18 @@ def update_application(
         app.applied_at = body.applied_at
     db.commit()
     db.refresh(app)
+
+    # Phase 0: record the outcome transition (best-effort, after commit).
+    # This is the training signal for Phase 5's learned ranker — captured now so
+    # data accumulates from day one. Only emit on an actual status change.
+    if status_changed_from is not None:
+        log_event(
+            EVENT_APPLICATION_STATUS_CHANGED,
+            user_id=current_user.id,
+            internship_id=app.internship_id,
+            payload={"from_status": status_changed_from, "to_status": app.status},
+        )
+
     return db.query(Application).options(
         joinedload(Application.internship)
     ).filter(Application.id == app.id).first()

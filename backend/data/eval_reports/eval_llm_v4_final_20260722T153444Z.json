@@ -1,0 +1,855 @@
+{
+  "extractor": "llm_v4_final",
+  "n_cases": 24,
+  "aggregate": {
+    "macro_precision": 0.943,
+    "macro_recall": 0.869,
+    "macro_f1": 0.895,
+    "n_thin": 2,
+    "thin_clean_rate": 1.0
+  },
+  "cases": [
+    {
+      "case_id": 1,
+      "title": "Data Science Intern",
+      "company": "NorthWind Analytics",
+      "role_type": "data",
+      "precision": 0.875,
+      "recall": 0.875,
+      "f1": 0.875,
+      "is_thin": false,
+      "expected": [
+        "data visualization",
+        "machine learning",
+        "numpy",
+        "pandas",
+        "python",
+        "scikit-learn",
+        "sql",
+        "statistics"
+      ],
+      "predicted": [
+        "data visualization",
+        "numpy",
+        "pandas",
+        "postgresql",
+        "python",
+        "scikit-learn",
+        "sql",
+        "statistics"
+      ],
+      "matched": [
+        "data visualization",
+        "numpy",
+        "pandas",
+        "python",
+        "scikit-learn",
+        "sql",
+        "statistics"
+      ],
+      "missing": [
+        "machine learning"
+      ],
+      "spurious": [
+        "postgresql"
+      ]
+    },
+    {
+      "case_id": 2,
+      "title": "Machine Learning Intern",
+      "company": "Vireo AI",
+      "role_type": "data",
+      "precision": 1.0,
+      "recall": 0.667,
+      "f1": 0.8,
+      "is_thin": false,
+      "expected": [
+        "computer vision",
+        "deep learning",
+        "nlp",
+        "numpy",
+        "python",
+        "pytorch"
+      ],
+      "predicted": [
+        "nlp",
+        "numpy",
+        "python",
+        "pytorch"
+      ],
+      "matched": [
+        "nlp",
+        "numpy",
+        "python",
+        "pytorch"
+      ],
+      "missing": [
+        "computer vision",
+        "deep learning"
+      ],
+      "spurious": []
+    },
+    {
+      "case_id": 3,
+      "title": "Data Analyst Intern",
+      "company": "BrightMetrics",
+      "role_type": "data",
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "is_thin": false,
+      "expected": [
+        "excel",
+        "pandas",
+        "python",
+        "sql",
+        "statistics",
+        "tableau"
+      ],
+      "predicted": [
+        "excel",
+        "pandas",
+        "python",
+        "sql",
+        "statistics",
+        "tableau"
+      ],
+      "matched": [
+        "excel",
+        "pandas",
+        "python",
+        "sql",
+        "statistics",
+        "tableau"
+      ],
+      "missing": [],
+      "spurious": []
+    },
+    {
+      "case_id": 4,
+      "title": "Backend Engineering Intern",
+      "company": "Corewave Systems",
+      "role_type": "backend",
+      "precision": 1.0,
+      "recall": 0.778,
+      "f1": 0.875,
+      "is_thin": false,
+      "expected": [
+        "docker",
+        "fastapi",
+        "git",
+        "linux",
+        "postgresql",
+        "python",
+        "redis",
+        "rest api",
+        "sql"
+      ],
+      "predicted": [
+        "docker",
+        "fastapi",
+        "git",
+        "linux",
+        "postgresql",
+        "python",
+        "redis"
+      ],
+      "matched": [
+        "docker",
+        "fastapi",
+        "git",
+        "linux",
+        "postgresql",
+        "python",
+        "redis"
+      ],
+      "missing": [
+        "rest api",
+        "sql"
+      ],
+      "spurious": []
+    },
+    {
+      "case_id": 5,
+      "title": "Software Engineer Intern, Backend",
+      "company": "Latchford",
+      "role_type": "backend",
+      "precision": 0.857,
+      "recall": 0.857,
+      "f1": 0.857,
+      "is_thin": false,
+      "expected": [
+        "aws",
+        "ci/cd",
+        "java",
+        "kubernetes",
+        "mysql",
+        "spring boot",
+        "sql"
+      ],
+      "predicted": [
+        "aws",
+        "ci/cd",
+        "data structures",
+        "java",
+        "kubernetes",
+        "mysql",
+        "spring boot"
+      ],
+      "matched": [
+        "aws",
+        "ci/cd",
+        "java",
+        "kubernetes",
+        "mysql",
+        "spring boot"
+      ],
+      "missing": [
+        "sql"
+      ],
+      "spurious": [
+        "data structures"
+      ]
+    },
+    {
+      "case_id": 6,
+      "title": "Platform Engineering Intern",
+      "company": "Nimbus Cloud",
+      "role_type": "backend",
+      "precision": 1.0,
+      "recall": 0.857,
+      "f1": 0.923,
+      "is_thin": false,
+      "expected": [
+        "docker",
+        "gcp",
+        "go",
+        "kubernetes",
+        "linux",
+        "python",
+        "terraform"
+      ],
+      "predicted": [
+        "docker",
+        "go",
+        "kubernetes",
+        "linux",
+        "python",
+        "terraform"
+      ],
+      "matched": [
+        "docker",
+        "go",
+        "kubernetes",
+        "linux",
+        "python",
+        "terraform"
+      ],
+      "missing": [
+        "gcp"
+      ],
+      "spurious": []
+    },
+    {
+      "case_id": 7,
+      "title": "Frontend Developer Intern",
+      "company": "Pixelform",
+      "role_type": "frontend",
+      "precision": 1.0,
+      "recall": 0.857,
+      "f1": 0.923,
+      "is_thin": false,
+      "expected": [
+        "css",
+        "html",
+        "javascript",
+        "next.js",
+        "react",
+        "rest api",
+        "typescript"
+      ],
+      "predicted": [
+        "css",
+        "html",
+        "next.js",
+        "react",
+        "rest api",
+        "typescript"
+      ],
+      "matched": [
+        "css",
+        "html",
+        "next.js",
+        "react",
+        "rest api",
+        "typescript"
+      ],
+      "missing": [
+        "javascript"
+      ],
+      "spurious": []
+    },
+    {
+      "case_id": 8,
+      "title": "UI Engineer Intern",
+      "company": "Northstar Labs",
+      "role_type": "frontend",
+      "precision": 1.0,
+      "recall": 0.833,
+      "f1": 0.909,
+      "is_thin": false,
+      "expected": [
+        "css",
+        "git",
+        "html",
+        "javascript",
+        "react",
+        "vue"
+      ],
+      "predicted": [
+        "css",
+        "git",
+        "javascript",
+        "react",
+        "vue"
+      ],
+      "matched": [
+        "css",
+        "git",
+        "javascript",
+        "react",
+        "vue"
+      ],
+      "missing": [
+        "html"
+      ],
+      "spurious": []
+    },
+    {
+      "case_id": 9,
+      "title": "Full Stack Intern",
+      "company": "Juno Software",
+      "role_type": "backend",
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "is_thin": false,
+      "expected": [
+        "docker",
+        "express",
+        "git",
+        "javascript",
+        "mongodb",
+        "nodejs",
+        "react",
+        "rest api",
+        "typescript"
+      ],
+      "predicted": [
+        "docker",
+        "express",
+        "git",
+        "javascript",
+        "mongodb",
+        "nodejs",
+        "react",
+        "rest api",
+        "typescript"
+      ],
+      "matched": [
+        "docker",
+        "express",
+        "git",
+        "javascript",
+        "mongodb",
+        "nodejs",
+        "react",
+        "rest api",
+        "typescript"
+      ],
+      "missing": [],
+      "spurious": []
+    },
+    {
+      "case_id": 10,
+      "title": "Data Engineering Intern",
+      "company": "Fluxstream",
+      "role_type": "data",
+      "precision": 0.833,
+      "recall": 0.833,
+      "f1": 0.833,
+      "is_thin": false,
+      "expected": [
+        "airflow",
+        "aws",
+        "etl",
+        "python",
+        "spark",
+        "sql"
+      ],
+      "predicted": [
+        "airflow",
+        "aws",
+        "postgresql",
+        "python",
+        "spark",
+        "sql"
+      ],
+      "matched": [
+        "airflow",
+        "aws",
+        "python",
+        "spark",
+        "sql"
+      ],
+      "missing": [
+        "etl"
+      ],
+      "spurious": [
+        "postgresql"
+      ]
+    },
+    {
+      "case_id": 11,
+      "title": "NLP Research Intern",
+      "company": "Lexicon AI",
+      "role_type": "data",
+      "precision": 1.0,
+      "recall": 0.5,
+      "f1": 0.667,
+      "is_thin": false,
+      "expected": [
+        "deep learning",
+        "hugging face",
+        "machine learning",
+        "nlp",
+        "python",
+        "pytorch"
+      ],
+      "predicted": [
+        "nlp",
+        "python",
+        "pytorch"
+      ],
+      "matched": [
+        "nlp",
+        "python",
+        "pytorch"
+      ],
+      "missing": [
+        "deep learning",
+        "hugging face",
+        "machine learning"
+      ],
+      "spurious": []
+    },
+    {
+      "case_id": 12,
+      "title": "DevOps Intern",
+      "company": "Steelgrid",
+      "role_type": "backend",
+      "precision": 0.833,
+      "recall": 0.714,
+      "f1": 0.769,
+      "is_thin": false,
+      "expected": [
+        "azure",
+        "ci/cd",
+        "docker",
+        "kubernetes",
+        "linux",
+        "python",
+        "terraform"
+      ],
+      "predicted": [
+        "azure",
+        "bash",
+        "docker",
+        "kubernetes",
+        "python",
+        "terraform"
+      ],
+      "matched": [
+        "azure",
+        "docker",
+        "kubernetes",
+        "python",
+        "terraform"
+      ],
+      "missing": [
+        "ci/cd",
+        "linux"
+      ],
+      "spurious": [
+        "bash"
+      ]
+    },
+    {
+      "case_id": 13,
+      "title": "Android Developer Intern",
+      "company": "Mobilis",
+      "role_type": "frontend",
+      "precision": 1.0,
+      "recall": 0.8,
+      "f1": 0.889,
+      "is_thin": false,
+      "expected": [
+        "android",
+        "git",
+        "kotlin",
+        "rest api",
+        "sqlite"
+      ],
+      "predicted": [
+        "git",
+        "kotlin",
+        "rest api",
+        "sqlite"
+      ],
+      "matched": [
+        "git",
+        "kotlin",
+        "rest api",
+        "sqlite"
+      ],
+      "missing": [
+        "android"
+      ],
+      "spurious": []
+    },
+    {
+      "case_id": 14,
+      "title": "Business Intelligence Intern",
+      "company": "Ledgerpoint",
+      "role_type": "data",
+      "precision": 0.8,
+      "recall": 1.0,
+      "f1": 0.889,
+      "is_thin": false,
+      "expected": [
+        "excel",
+        "power bi",
+        "python",
+        "sql"
+      ],
+      "predicted": [
+        "excel",
+        "power bi",
+        "python",
+        "sql",
+        "statistics"
+      ],
+      "matched": [
+        "excel",
+        "power bi",
+        "python",
+        "sql"
+      ],
+      "missing": [],
+      "spurious": [
+        "statistics"
+      ]
+    },
+    {
+      "case_id": 15,
+      "title": "Cloud Engineering Intern",
+      "company": "Aeronaut",
+      "role_type": "backend",
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "is_thin": false,
+      "expected": [
+        "aws",
+        "docker",
+        "kubernetes",
+        "linux",
+        "python",
+        "terraform"
+      ],
+      "predicted": [
+        "aws",
+        "docker",
+        "kubernetes",
+        "linux",
+        "python",
+        "terraform"
+      ],
+      "matched": [
+        "aws",
+        "docker",
+        "kubernetes",
+        "linux",
+        "python",
+        "terraform"
+      ],
+      "missing": [],
+      "spurious": []
+    },
+    {
+      "case_id": 16,
+      "title": "Software Intern",
+      "company": "Gencode",
+      "role_type": "general",
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "is_thin": true,
+      "expected": [],
+      "predicted": [],
+      "matched": [],
+      "missing": [],
+      "spurious": []
+    },
+    {
+      "case_id": 17,
+      "title": "Engineering Intern",
+      "company": "Vantage",
+      "role_type": "general",
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "is_thin": false,
+      "expected": [
+        "python"
+      ],
+      "predicted": [
+        "python"
+      ],
+      "matched": [
+        "python"
+      ],
+      "missing": [],
+      "spurious": []
+    },
+    {
+      "case_id": 18,
+      "title": "Tech Intern",
+      "company": "Startly",
+      "role_type": "general",
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "is_thin": true,
+      "expected": [],
+      "predicted": [],
+      "matched": [],
+      "missing": [],
+      "spurious": []
+    },
+    {
+      "case_id": 19,
+      "title": "Junior Data Scientist Intern",
+      "company": "Quantis",
+      "role_type": "data",
+      "precision": 1.0,
+      "recall": 0.833,
+      "f1": 0.909,
+      "is_thin": false,
+      "expected": [
+        "machine learning",
+        "pandas",
+        "python",
+        "scikit-learn",
+        "sql",
+        "statistics"
+      ],
+      "predicted": [
+        "pandas",
+        "python",
+        "scikit-learn",
+        "sql",
+        "statistics"
+      ],
+      "matched": [
+        "pandas",
+        "python",
+        "scikit-learn",
+        "sql",
+        "statistics"
+      ],
+      "missing": [
+        "machine learning"
+      ],
+      "spurious": []
+    },
+    {
+      "case_id": 20,
+      "title": "Web Developer Intern",
+      "company": "Craftline",
+      "role_type": "frontend",
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "is_thin": false,
+      "expected": [
+        "css",
+        "git",
+        "html",
+        "javascript",
+        "react"
+      ],
+      "predicted": [
+        "css",
+        "git",
+        "html",
+        "javascript",
+        "react"
+      ],
+      "matched": [
+        "css",
+        "git",
+        "html",
+        "javascript",
+        "react"
+      ],
+      "missing": [],
+      "spurious": []
+    },
+    {
+      "case_id": 21,
+      "title": "Site Reliability Intern",
+      "company": "Uptime Labs",
+      "role_type": "backend",
+      "precision": 0.833,
+      "recall": 1.0,
+      "f1": 0.909,
+      "is_thin": false,
+      "expected": [
+        "aws",
+        "docker",
+        "kubernetes",
+        "linux",
+        "python"
+      ],
+      "predicted": [
+        "aws",
+        "bash",
+        "docker",
+        "kubernetes",
+        "linux",
+        "python"
+      ],
+      "matched": [
+        "aws",
+        "docker",
+        "kubernetes",
+        "linux",
+        "python"
+      ],
+      "missing": [],
+      "spurious": [
+        "bash"
+      ]
+    },
+    {
+      "case_id": 22,
+      "title": "Analytics Engineer Intern",
+      "company": "Modelworks",
+      "role_type": "data",
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "is_thin": false,
+      "expected": [
+        "dbt",
+        "git",
+        "python",
+        "snowflake",
+        "sql"
+      ],
+      "predicted": [
+        "dbt",
+        "git",
+        "python",
+        "snowflake",
+        "sql"
+      ],
+      "matched": [
+        "dbt",
+        "git",
+        "python",
+        "snowflake",
+        "sql"
+      ],
+      "missing": [],
+      "spurious": []
+    },
+    {
+      "case_id": 23,
+      "title": "React Native Intern",
+      "company": "Foldable",
+      "role_type": "frontend",
+      "precision": 0.714,
+      "recall": 1.0,
+      "f1": 0.833,
+      "is_thin": false,
+      "expected": [
+        "javascript",
+        "react native",
+        "redux",
+        "rest api",
+        "typescript"
+      ],
+      "predicted": [
+        "android",
+        "ios",
+        "javascript",
+        "react native",
+        "redux",
+        "rest api",
+        "typescript"
+      ],
+      "matched": [
+        "javascript",
+        "react native",
+        "redux",
+        "rest api",
+        "typescript"
+      ],
+      "missing": [],
+      "spurious": [
+        "android",
+        "ios"
+      ]
+    },
+    {
+      "case_id": 24,
+      "title": "API Engineering Intern",
+      "company": "Conduit",
+      "role_type": "backend",
+      "precision": 1.0,
+      "recall": 0.714,
+      "f1": 0.833,
+      "is_thin": false,
+      "expected": [
+        "django",
+        "docker",
+        "git",
+        "postgresql",
+        "python",
+        "rest api",
+        "sql"
+      ],
+      "predicted": [
+        "docker",
+        "git",
+        "postgresql",
+        "python",
+        "rest api"
+      ],
+      "matched": [
+        "docker",
+        "git",
+        "postgresql",
+        "python",
+        "rest api"
+      ],
+      "missing": [
+        "django",
+        "sql"
+      ],
+      "spurious": []
+    }
+  ]
+}

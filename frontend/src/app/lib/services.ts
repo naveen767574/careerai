@@ -14,6 +14,41 @@ export const resumeService = {
     return res.data;
   },
   getAnalysis: (resumeId: string) => api.get(`/resume/${resumeId}/analysis`).then(r => r.data),
+  async optimize() {
+    // Uses the user's stored resume (auth). Returns:
+    // { improvements: string[], missing_keywords: string[],
+    //   improved_bullets: { original: string; improved: string }[] }
+    const res = await api.post('/resume/optimize');
+    return res.data;
+  },
+  async careerAnalysis() {
+    const res = await api.post('/resume/career-analysis');
+    return res.data as {
+      target_role: string;
+      confidence: number;
+      reasoning: string;
+      match_score: number;
+      level: string;
+      role_analysis: string;
+      readiness_score: number;
+      readiness_summary: string;
+      present_skills: string[];
+      missing_skills: string[];
+      missing_skills_detailed: {
+        skill: string;
+        priority: 'High' | 'Medium' | 'Low';
+        why_it_matters: string;
+        how_to_learn: string[];
+        project_idea: string;
+      }[];
+      missing_experience: string[];
+      recommended_projects: string[];
+      action_plan: { day: string; focus: string }[];
+      career_guidance: string;
+      resume_improvements: string[];
+      _error?: boolean;
+    };
+  },
 };
 
 export const internshipService = {
@@ -29,6 +64,50 @@ export const internshipService = {
     const res = await api.get(`/internships/${internshipId}/explain`);
     // Returns: { match_reasons: string[], missing_skills: string[], tip: string }
     return res.data;
+  },
+  async getSkillGap(internshipId: string | number) {
+    const res = await api.get(`/internships/${internshipId}/skill-gap`);
+    // Returns: { matched_skills: string[], missing_skills: string[], match_percentage: number }
+    return res.data;
+  },
+  async getSkillSimulations(internshipId: string | number) {
+    const res = await api.get(`/internships/${internshipId}/skill-gap/simulations`);
+    // Returns: { current_pct: number, simulations: [{skill, simulated_pct, delta_pct, new_label}] }
+    return res.data as {
+      current_pct: number;
+      simulations: { skill: string; simulated_pct: number; delta_pct: number; new_label: string }[];
+    };
+  },
+  async getMatchInsights(internshipId: string | number) {
+    const res = await api.get(`/internships/${internshipId}/match-insights`);
+    // Role-aware, stack-aware insight bundle. match_percentage is the SAME
+    // weighted skill-coverage score as /skill-gap — enriched, never a second number.
+    return res.data as {
+      role_type: string;
+      role_label: string;
+      stack_type: string;
+      stack_label: string;
+      match_percentage: number;
+      matched_skills: string[];
+      missing_skills: { core: string[]; secondary: string[]; optional: string[] };
+      explanation: string;
+      match_reasons: string[];
+      recommendation: string;
+      top_missing_skill: string;
+      skill_impacts: { skill: string; impact: number }[];
+    };
+  },
+};
+
+export const internshipStatsService = {
+  async get(token?: string) {
+    const res = await api.get('/internships/stats');
+    return res.data as {
+      total_positions: number;
+      new_this_week: number;
+      high_match: number;
+      saved: number;
+    };
   },
 };
 
@@ -161,3 +240,25 @@ export const notificationService = {
 
 
 
+
+export const draftsService = {
+  async generate(internship_id: number) {
+    const res = await api.post('/drafts/generate', { internship_id });
+    return res.data;
+  },
+  async getAll() {
+    const res = await api.get('/drafts');
+    return res.data;
+  },
+  async update(id: number, content: string) {
+    const res = await api.patch(`/drafts/${id}`, { content });
+    return res.data;
+  },
+  async approve(id: number) {
+    const res = await api.patch(`/drafts/${id}/approve`);
+    return res.data;
+  },
+  async discard(id: number) {
+    await api.delete(`/drafts/${id}`);
+  },
+};

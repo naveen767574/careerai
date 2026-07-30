@@ -100,7 +100,7 @@ export function CareerPaths() {
           id: idx + 1,
           title: path.title || path.path_id || 'Career Path',
           icon: iconMap[iconKey],
-          match: path.match_percentage || path.alignment_score || 80,
+          match: Math.floor(path.display_score ?? path.match_percentage ?? 0),
           salary: path.salary_range || 'Competitive',
           growth: path.growth_rate || '+18%',
           skills: path.required_skills || path.user_has || [],

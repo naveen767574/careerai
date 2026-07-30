@@ -128,4 +128,47 @@ async def get_run(
         "output_json": run.output_json,
         "started_at": run.started_at,
         "completed_at": run.completed_at,
-    }
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/scraper/run   — manual scraper trigger
+# Fires both scraper phases (scrape + embed) in a background thread.
+# Returns immediately; poll /api/agent/status or check logs for progress.
+# ---------------------------------------------------------------------------
+
+import logging as _sc_logger
+_scraper_log = _sc_logger.getLogger("scraper.manual_trigger")
+
+
+def _run_scraper_pipeline() -> None:
+    """
+    Manual scraper trigger — delegates to scraper_scheduler.run_pipeline_once()
+    so the shared concurrency lock is respected: if the scheduler is already
+    running, this call logs a warning and returns without double-running.
+    """
+    from app.services.scraper_scheduler import run_pipeline_once
+    acquired = run_pipeline_once(reason="manual_trigger")
+    if not acquired:
+        _scraper_log.warning("manual_scraper.skipped — scraper lock busy")
+
+
+@router.post("/scraper/run")
+async def run_scraper_now(
+    background_tasks: BackgroundTasks,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+):
+    """
+    Manually trigger the scraper + embedding pipeline.
+    Runs in background — returns immediately.
+    If the scheduler is already running the lock prevents a double-run.
+    """
+    try:
+        AuthService.verify_token(db, credentials.credentials)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+
+    background_tasks.add_task(_run_scraper_pipeline)
+    _scraper_log.info("manual_scraper.triggered")
+    return {"message": "Scraper pipeline started in background. Check server logs for progress."}

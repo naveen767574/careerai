@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Bell, Search, Settings, LogOut, X } from 'lucide-react';
+import { Bell, Search, Settings, LogOut } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { authService } from '../lib/auth';
 import { notificationService } from '../lib/services';
@@ -42,12 +42,33 @@ export function Topbar() {
     } catch { }
   };
 
+  const handleMarkRead = async (id: number) => {
+    const notif = notifications.find(n => n.id === id);
+    if (!notif || notif.is_read) return; // already read — no-op
+    try {
+      await notificationService.markRead(id);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch { }
+  };
+
   const handleMarkAllRead = async () => {
     try {
       await notificationService.markAllRead();
       setUnreadCount(0);
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     } catch { }
+  };
+
+  const timeAgo = (dateStr: string): string => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const m = Math.floor(diff / 60_000);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24);
+    return `${d}d ago`;
   };
 
   const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -129,14 +150,33 @@ export function Topbar() {
                     Mark all read
                   </button>
                 </div>
-                <div className="max-h-72 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                <div className="max-h-80 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                   {notifications.length === 0 ? (
-                    <p className="text-center text-white/40 text-sm py-8">No notifications</p>
+                    <div className="py-10 text-center">
+                      <Bell className="w-8 h-8 text-white/20 mx-auto mb-2" />
+                      <p className="text-white/40 text-sm">No notifications yet</p>
+                      <p className="text-white/25 text-xs mt-1">Run a recommendation refresh to get job alerts</p>
+                    </div>
                   ) : (
-                    notifications.slice(0, 10).map((n: any) => (
-                      <div key={n.id} className={`p-4 border-b border-white/5 hover:bg-white/5 transition-colors ${!n.is_read ? 'bg-blue-500/5' : ''}`}>
-                        <p className="text-sm font-medium">{n.title}</p>
-                        <p className="text-xs text-white/60 mt-1 line-clamp-2">{n.message}</p>
+                    notifications.slice(0, 15).map((n: any) => (
+                      <div
+                        key={n.id}
+                        onClick={() => handleMarkRead(n.id)}
+                        className={`flex gap-3 p-4 border-b border-white/5 transition-colors cursor-pointer hover:bg-white/5 ${!n.is_read ? 'bg-blue-500/5' : ''}`}
+                      >
+                        {/* Unread dot */}
+                        <div className="flex-shrink-0 pt-1.5">
+                          {!n.is_read
+                            ? <div className="w-2 h-2 rounded-full bg-blue-400" />
+                            : <div className="w-2 h-2" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-sm leading-tight ${!n.is_read ? 'font-semibold text-white' : 'font-medium text-white/80'}`}>
+                            {n.title}
+                          </p>
+                          <p className="text-xs text-white/55 mt-0.5 line-clamp-2">{n.message}</p>
+                          <p className="text-[10px] text-white/30 mt-1">{timeAgo(n.created_at)}</p>
+                        </div>
                       </div>
                     ))
                   )}

@@ -9,6 +9,39 @@ from app.services.resume_analyzer import ResumeAnalyzer
 from app.services.resume_upload_service import ResumeUploadService, ALLOWED_TYPES, MAX_FILE_SIZE
 from app.services.r2_storage import get_storage
 
+import logging as _resume_log
+_resume_logger = _resume_log.getLogger("resume.upload")
+
+
+def _trigger_rec_refresh(user_id: int) -> None:
+    """
+    After a resume upload + analysis completes, regenerate recommendations
+    so match scores immediately reflect the new resume content.
+    Runs as a background task — failures are logged but never bubble up.
+    """
+    import time
+    from app.database import SessionLocal
+    from app.services.recommendation_engine import RecommendationEngine
+    t0 = time.perf_counter()
+    db = SessionLocal()
+    try:
+        result = RecommendationEngine(db).refresh_for_user(user_id)
+        elapsed = round(time.perf_counter() - t0, 2)
+        _resume_logger.info(
+            "rec_refresh.complete user_id=%d recommendations=%d elapsed_s=%.2f",
+            user_id, result.get("recommendations", 0), elapsed,
+        )
+    except Exception as exc:
+        elapsed = round(time.perf_counter() - t0, 2)
+        _resume_logger.error(
+            "rec_refresh.failed user_id=%d elapsed_s=%.2f error=%s",
+            user_id, elapsed, exc,
+            exc_info=True,
+        )
+    finally:
+        db.close()
+
+
 router = APIRouter(prefix="/resumes", tags=["resume"])
 security = HTTPBearer()
 
@@ -48,6 +81,9 @@ def upload_resume(
     )
 
     background_tasks.add_task(ResumeAnalyzer.process_resume, str(resume.id), user.id)
+    # Refresh recommendations once resume analysis finishes — keeps match scores current.
+    # Runs as a second background task so it doesn't slow down the upload response.
+    background_tasks.add_task(_trigger_rec_refresh, user.id)
 
     file_url = resume.file_url
     if file_url and not str(file_url).lower().startswith("http"):

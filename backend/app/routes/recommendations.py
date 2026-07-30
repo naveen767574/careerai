@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.models.internship import Internship
-from app.models.internship_skill import InternshipSkill
 from app.models.recommendation import Recommendation
 from app.models.resume import Resume
 from app.models.skill import Skill
+from app.schemas.explanation import ExplanationResponse
 from app.schemas.recommendation import (
     RecommendationItem,
     RecommendationsResponse,
@@ -22,8 +22,12 @@ from app.schemas.recommendation import (
     SkillGapResponse,
 )
 from app.services.auth_service import AuthService
+from app.services.event_logger import (
+    log_event,
+    EVENT_RECOMMENDATIONS_SERVED,
+)
+from app.services.explanation_service import generate_explanation
 from app.services.recommendation_engine import RecommendationEngine
-from app.services.embedding_service import normalize_score
 
 logger = logging.getLogger(__name__)
 
@@ -35,81 +39,52 @@ security = HTTPBearer()
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _normalize_display_score(raw_percentage: float) -> float:
+def _derive_match_label(raw_percentage: float) -> str:
     """
-    Convert raw composite score (0–100) to a user-friendly display score (50–100).
-
-    WHY: all-MiniLM cosine similarity peaks around 0.3–0.5 for related but
-    non-identical texts. A composite score of 58% looks like a C-grade to users
-    even when it's actually a strong match. We map the realistic range to 50–100
-    so scores feel meaningful.
-
-    Uses the existing normalize_score() from embedding_service which maps
-    0.0–0.45 cosine range → 50–100 display. We divide by 100 first since
-    normalize_score() expects a 0–1 input.
+    Derive label from the stored match percentage (0–100 range).
+    This is weighted skill COVERAGE (real matched/total), so the thresholds map
+    to honest overlap, not a compressed composite.
     """
-    raw_0_to_1 = raw_percentage / 100.0
-    return normalize_score(raw_0_to_1, min_val=0.0, max_val=0.85)
-
-
-def _derive_match_label(display_score: float) -> str:
-    """Derive label from normalized display score (50–100 range)."""
-    if display_score >= 88:
+    if raw_percentage >= 80:
         return "Excellent Match"
-    if display_score >= 78:
+    if raw_percentage >= 70:
         return "Strong Match"
-    if display_score >= 68:
+    if raw_percentage >= 60:
         return "Good Match"
-    if display_score >= 58:
+    if raw_percentage >= 50:
         return "Partial Match"
     return "Low Match"
 
 
-def _get_skill_names_for_internship(db: Session, internship_id: int) -> list[str]:
-    """Fetch required skills for one internship from InternshipSkill table."""
-    rows = (
-        db.query(InternshipSkill.skill_name)
-        .filter(InternshipSkill.internship_id == internship_id)
-        .all()
-    )
-    return [row[0].strip().lower() for row in rows if row[0]]
-
-
 def _get_user_skill_names(db: Session, user_id: int) -> list[str]:
-    """Fetch user's skills as a normalized set."""
+    """Fetch user's skills as a normalized list (free-text LLM context only)."""
     rows = db.query(Skill.skill_name).filter(Skill.user_id == user_id).all()
     return [row[0].strip().lower() for row in rows if row[0]]
-
-
-def _compute_matched_missing(
-    user_skills: list[str], required_skills: list[str]
-) -> tuple[list[str], list[str]]:
-    """
-    Fast set-based skill match for display purposes.
-    We use exact match here (not embedding similarity) because:
-    - This runs at READ time on every GET request
-    - Embedding similarity already ran at REFRESH time and produced the score
-    - For display, exact match is sufficient and instant
-    """
-    user_set = set(user_skills)
-    matched = [s for s in required_skills if s in user_set]
-    missing = [s for s in required_skills if s not in user_set]
-    return matched, missing
 
 
 def _build_recommendation_item(
     rec: Recommendation,
     internship: Internship,
-    user_skills: list[str],
-    db: Session,
 ) -> RecommendationItem:
-    """Build a RecommendationItem from a DB Recommendation row + its Internship."""
-    required_skills = _get_skill_names_for_internship(db, internship.id)
-    matched, missing = _compute_matched_missing(user_skills, required_skills)
+    """
+    Build a RecommendationItem from a DB Recommendation row + its Internship.
+
+    matched_skills / missing_skills are read VERBATIM from the row — they were
+    computed semantically (cosine >= 0.70) at refresh time. No recompute here,
+    so the chips always agree with the score and reads stay fast.
+    """
+    matched = rec.matched_skills or []
+    missing = rec.missing_skills or []
 
     raw_pct = rec.match_percentage or 0.0
-    display = _normalize_display_score(raw_pct)
-    label = _derive_match_label(display)
+    label = _derive_match_label(raw_pct)
+
+    # Serialize internship created_at so the frontend can compute "New This Week"
+    created_iso = (
+        internship.created_at.isoformat()
+        if internship.created_at is not None
+        else None
+    )
 
     return RecommendationItem(
         internship_id=rec.internship_id,
@@ -117,12 +92,14 @@ def _build_recommendation_item(
         company=internship.company or "",
         location=internship.location or "",
         application_url=internship.application_url or "",
+        source=internship.source or "",
         similarity_score=round(rec.similarity_score or 0.0, 4),
-        match_percentage=round(raw_pct, 1),
-        display_score=round(display, 1),
+        match_percentage=raw_pct,
+        display_score=raw_pct,
         matched_skills=matched,
         missing_skills=missing,
         match_label=label,
+        internship_created_at=created_iso,
     )
 
 
@@ -171,20 +148,34 @@ async def get_recommendations(
             generated_at=datetime.utcnow().isoformat(),
         )
 
-    # Fetch user skills once — reused for all recommendations
-    user_skills = _get_user_skill_names(db, user.id)
-
     items = []
     for rec in saved_recs:
         if not rec.internship:
             continue
-        item = _build_recommendation_item(rec, rec.internship, user_skills, db)
+        item = _build_recommendation_item(rec, rec.internship)
         items.append(item)
 
     elapsed = round((time.time() - t_start) * 1000)
     logger.info(
         "recommendations.get user_id=%d count=%d elapsed_ms=%d",
         user.id, len(items), elapsed,
+    )
+
+    # Phase 0: record what was shown and in what order (exposure signal).
+    # Emitted after the payload is built so instrumentation is off the hot path.
+    log_event(
+        EVENT_RECOMMENDATIONS_SERVED,
+        user_id=user.id,
+        payload={
+            "shown": [
+                {
+                    "internship_id": it.internship_id,
+                    "match_pct": it.match_percentage,
+                    "rank": rank,
+                }
+                for rank, it in enumerate(items, start=1)
+            ]
+        },
     )
 
     return RecommendationsResponse(
@@ -234,13 +225,11 @@ async def refresh_recommendations(
         .all()
     )
 
-    user_skills = _get_user_skill_names(db, user.id)
-
     items = []
     for rec in saved_recs:
         if not rec.internship:
             continue
-        item = _build_recommendation_item(rec, rec.internship, user_skills, db)
+        item = _build_recommendation_item(rec, rec.internship)
         items.append(item)
 
     elapsed = round((time.time() - t_start) * 1000)
@@ -293,22 +282,20 @@ async def get_skill_gap(
             detail="No recommendations found. Run /refresh first.",
         )
 
-    user_skills = set(_get_user_skill_names(db, user.id))
-
-    # Analyze skill requirements across all top recommendations
+    # Aggregate across the top recommendations using the STORED semantic
+    # matched/missing skills (cosine >= 0.70), computed at refresh time.
+    # No exact string matching, no embedding recompute here.
     # missing_tracker: skill → list of match_percentages of jobs that need it
     missing_tracker: dict[str, list[float]] = defaultdict(list)
     strong_tracker: dict[str, int] = defaultdict(int)
 
     for rec in top_recs:
-        required = _get_skill_names_for_internship(db, rec.internship_id)
         score = rec.match_percentage or 0.0
 
-        for skill in required:
-            if skill in user_skills:
-                strong_tracker[skill] += 1
-            else:
-                missing_tracker[skill].append(score)
+        for skill in (rec.matched_skills or []):
+            strong_tracker[skill] += 1
+        for skill in (rec.missing_skills or []):
+            missing_tracker[skill].append(score)
 
     # Build SkillGapItems — ranked by frequency × average relevance
     gap_items: list[SkillGapItem] = []
@@ -366,12 +353,17 @@ async def get_skill_gap(
 
 
 # ---------------------------------------------------------------------------
-# POST /api/recommendations/explain
-# Returns AI-generated explanation for a specific recommendation.
-# Called on-demand (user clicks "Why this match?") — not on every load.
+# POST /api/recommendations/explain/{internship_id}
+# Returns a GROUNDED explanation for a specific recommendation (Phase 3).
+# Called on-demand (user clicks "Why this match?") — NEVER on list load.
+#
+# The explanation layer may only talk ABOUT matched/missing skills that were
+# already computed deterministically at refresh time. `display_score` is passed
+# straight through from the stored recommendation row; nothing here recomputes
+# or adjusts it.
 # ---------------------------------------------------------------------------
 
-@router.post("/explain/{internship_id}", response_model=dict)
+@router.post("/explain/{internship_id}", response_model=ExplanationResponse)
 async def explain_recommendation(
     internship_id: int,
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -401,44 +393,31 @@ async def explain_recommendation(
     if not internship:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Internship not found.")
 
-    # Build context for explanation
-    user_skills = _get_user_skill_names(db, user.id)
-    required_skills = _get_skill_names_for_internship(db, internship_id)
-    matched, missing = _compute_matched_missing(user_skills, required_skills)
+    # Use the STORED semantic matched/missing from the recommendation row
+    # (cosine >= 0.70, computed at refresh). No recompute — consistent with score.
+    matched = rec.matched_skills or []
+    missing = rec.missing_skills or []
 
-    # Fetch experience and projects for richer explanation
-    from app.models.experience import Experience
-    from app.models.project import Project
+    # DETERMINISTIC score — read from storage, never regenerated here.
+    raw_pct = rec.match_percentage or 0.0
 
-    experiences = db.query(Experience).filter(Experience.user_id == user.id).all()
-    projects = db.query(Project).filter(Project.user_id == user.id).all()
-
-    user_experience = "; ".join(
-        f"{e.role} at {e.company}" for e in experiences if e.role
-    )
-    user_projects = "; ".join(p.name for p in projects if p.name)
-
-    from app.services.recommendation_engine import explain_match
-
-    explanation = explain_match(
-        internship_title=internship.title or "",
-        internship_company=internship.company or "",
-        user_skills=", ".join(user_skills),
+    explanation, source = generate_explanation(
+        db=db,
+        user_id=user.id,
+        job=internship,
         matched_skills=matched,
         missing_skills=missing,
-        user_experience=user_experience,
-        user_projects=user_projects,
+        score=raw_pct,
     )
 
-    display = _normalize_display_score(rec.match_percentage or 0.0)
-
-    return {
-        "internship_id": internship_id,
-        "title": internship.title,
-        "company": internship.company,
-        "display_score": round(display, 1),
-        "match_label": _derive_match_label(display),
-        "matched_skills": matched,
-        "missing_skills": missing,
-        **explanation,   # match_reasons, tip from LLM
-    }
+    return ExplanationResponse(
+        internship_id=internship_id,
+        title=internship.title,
+        company=internship.company,
+        match_score=raw_pct,
+        match_label=_derive_match_label(raw_pct),
+        matched_skills=[s for s in matched],
+        missing_skills=[s for s in missing],
+        explanation=explanation,
+        source=source,
+    )

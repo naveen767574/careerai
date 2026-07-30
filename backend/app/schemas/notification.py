@@ -1,21 +1,24 @@
-﻿from pydantic import BaseModel
+from pydantic import BaseModel
 from datetime import datetime
-from enum import Enum
 
 
-class NotificationType(str, Enum):
-    NEW_RECOMMENDATIONS = "NEW_RECOMMENDATIONS"
-    APPLICATION_UPDATE = "APPLICATION_UPDATE"
-    RESUME_ANALYZED = "RESUME_ANALYZED"
-    INTERVIEW_REPORT_READY = "INTERVIEW_REPORT_READY"
-    LINKEDIN_REPORT_READY = "LINKEDIN_REPORT_READY"
-    COACHING_BRIEF = "COACHING_BRIEF"
-    SYSTEM_UPDATE = "SYSTEM_UPDATE"
+# Legacy enum kept for reference — not used in NotificationOut to allow
+# free-form type strings (e.g. "job_alert") without breaking validation.
+NOTIFICATION_TYPES = [
+    "NEW_RECOMMENDATIONS",
+    "APPLICATION_UPDATE",
+    "RESUME_ANALYZED",
+    "INTERVIEW_REPORT_READY",
+    "LINKEDIN_REPORT_READY",
+    "COACHING_BRIEF",
+    "SYSTEM_UPDATE",
+    "job_alert",
+]
 
 
 class NotificationOut(BaseModel):
     id: int
-    type: NotificationType
+    type: str          # free-form string — avoids enum mismatch for "job_alert" etc.
     title: str
     message: str
     is_read: bool
@@ -34,4 +37,4 @@ class NotificationListResponse(BaseModel):
 
 class MarkReadResponse(BaseModel):
     message: str
-    updated: int
+    updated: int

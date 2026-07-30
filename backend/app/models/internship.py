@@ -65,8 +65,9 @@ class Internship(Base):
     )
 
     __table_args__ = (
-        Index("idx_internships_company",  "company"),
-        Index("idx_internships_location", "location"),
-        Index("idx_internships_active",   "is_active"),
-        Index("idx_internships_source",   "source"),
+        Index("idx_internships_company",    "company"),
+        Index("idx_internships_location",   "location"),
+        Index("idx_internships_active",     "is_active"),
+        Index("idx_internships_source",     "source"),
+        Index("idx_internships_created_at", "created_at"),  # stats new_this_week query
     )

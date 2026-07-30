@@ -12,128 +12,15 @@ import logging
 import re
 from typing import Optional
 
+# Canonical skill dictionary + alias map now live in the shared taxonomy module
+# (single source of truth — Phase 2). Re-exported under the original names so the
+# rest of this file (and any importer of these names) is unchanged.
+from app.services.skill_taxonomy import (
+    CANONICAL_SKILLS as SKILLS_DICTIONARY,
+    SKILL_ALIASES,
+)
+
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Canonical skill dictionary — 200+ skills, lowercase keys
-# Add more here as you encounter them in job descriptions
-# ---------------------------------------------------------------------------
-SKILLS_DICTIONARY: set[str] = {
-    # Languages
-    "python", "java", "javascript", "typescript", "c++", "c#", "go", "rust",
-    "swift", "kotlin", "ruby", "php", "scala", "r", "matlab", "perl",
-    "bash", "shell", "powershell",
-
-    # Web Frontend
-    "react", "vue", "angular", "next.js", "nuxt", "svelte", "html", "css",
-    "sass", "tailwind", "bootstrap", "webpack", "vite", "jquery",
-
-    # Web Backend
-    "node.js", "express", "fastapi", "django", "flask", "spring", "spring boot",
-    "rails", "laravel", "asp.net", "graphql", "rest api", "websocket",
-
-    # Databases
-    "postgresql", "mysql", "sqlite", "mongodb", "redis", "elasticsearch",
-    "cassandra", "dynamodb", "firebase", "supabase", "oracle", "sql server",
-    "influxdb", "neo4j",
-
-    # Cloud & DevOps
-    "aws", "gcp", "azure", "docker", "kubernetes", "terraform", "ansible",
-    "jenkins", "github actions", "ci/cd", "linux", "nginx", "apache",
-    "cloudflare", "heroku", "vercel", "railway",
-
-    # Data & ML
-    "machine learning", "deep learning", "nlp", "computer vision",
-    "data science", "data analysis", "pandas", "numpy", "scikit-learn",
-    "tensorflow", "pytorch", "keras", "hugging face", "langchain",
-    "matplotlib", "seaborn", "plotly", "tableau", "power bi",
-    "apache spark", "hadoop", "airflow", "dbt", "etl",
-
-    # Mobile
-    "android", "ios", "flutter", "react native", "swift", "kotlin",
-    "xamarin", "ionic",
-
-    # Tools & Practices
-    "git", "github", "gitlab", "jira", "confluence", "figma", "postman",
-    "swagger", "agile", "scrum", "kanban", "tdd", "microservices",
-    "api design", "system design",
-
-    # General Tech
-    "excel", "word", "powerpoint", "google sheets", "notion",
-    "object oriented programming", "oop", "functional programming",
-    "data structures", "algorithms",
-
-    # Soft / Domain skills worth extracting
-    "communication", "teamwork", "problem solving", "leadership",
-}
-
-# ---------------------------------------------------------------------------
-# Alias map — non-canonical → canonical
-# Key: what appears in job descriptions
-# Value: what we store in the DB
-# ---------------------------------------------------------------------------
-SKILL_ALIASES: dict[str, str] = {
-    # Language aliases
-    "js":           "javascript",
-    "ts":           "typescript",
-    "py":           "python",
-    "c plus plus":  "c++",
-    "golang":       "go",
-    "node":         "node.js",
-    "nodejs":       "node.js",
-    "reactjs":      "react",
-    "react.js":     "react",
-    "vuejs":        "vue",
-    "vue.js":       "vue",
-    "angularjs":    "angular",
-    "nextjs":       "next.js",
-
-    # ML aliases
-    "ml":           "machine learning",
-    "dl":           "deep learning",
-    "ai":           "machine learning",  # broad but useful
-    "natural language processing": "nlp",
-    "cv":           "computer vision",
-    "hf":           "hugging face",
-
-    # DB aliases
-    "postgres":     "postgresql",
-    "mongo":        "mongodb",
-    "es":           "elasticsearch",
-    "dynamo":       "dynamodb",
-    "mssql":        "sql server",
-
-    # Cloud aliases
-    "amazon web services": "aws",
-    "google cloud": "gcp",
-    "gcp":          "gcp",
-    "k8s":          "kubernetes",
-    "kube":         "kubernetes",
-    "tf":           "terraform",
-
-    # Framework aliases
-    "fastapi":      "fastapi",
-    "spring boot":  "spring boot",
-    "springboot":   "spring boot",
-    "sklearn":      "scikit-learn",
-    "sk-learn":     "scikit-learn",
-    "pytorch":      "pytorch",
-    "torch":        "pytorch",
-
-    # Tool aliases
-    "gh":           "github",
-    "gh actions":   "github actions",
-    "ci cd":        "ci/cd",
-    "rest":         "rest api",
-    "restful":      "rest api",
-    "restful api":  "rest api",
-    "oop":          "object oriented programming",
-
-    # Soft skills
-    "communication skills": "communication",
-    "team player":          "teamwork",
-    "problem-solving":      "problem solving",
-}
 
 # Pre-compile regex patterns for each skill (word boundary match)
 # Done once at module load, not per extraction call
