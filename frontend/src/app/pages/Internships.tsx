@@ -756,23 +756,48 @@ const Internships = () => {
 
               {expandedExplain[internship.id] && explanations[internship.id] && (
                 <div className="mt-2 space-y-2">
-                  {(explanations[internship.id].match_reasons?.length > 0 || explanations[internship.id].tip) && (
-                    <div className="p-3 bg-white/5 rounded-xl text-xs space-y-2">
-                      {explanations[internship.id].match_reasons?.length > 0 && (
-                        <div>
-                          <p className="text-green-400 font-medium mb-1">Why it matches:</p>
-                          <ul className="space-y-1">
-                            {explanations[internship.id].match_reasons.map((r: string, i: number) => (
-                              <li key={i} className="text-white/70">• {r}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {explanations[internship.id].tip && (
-                        <p className="text-purple-300 italic">💡 {explanations[internship.id].tip}</p>
-                      )}
-                    </div>
-                  )}
+                  {(() => {
+                    // Phase 3 grounded shape: { explanation: { matched_skill_explanations,
+                    // missing_skill_advice, summary } }. Every skill named here is
+                    // guaranteed by the backend to be one the user actually has (or
+                    // actually lacks) — the LLM cannot introduce new ones.
+                    const exp = explanations[internship.id].explanation;
+                    if (!exp) return null;
+                    const reasons = exp.matched_skill_explanations ?? [];
+                    const advice = exp.missing_skill_advice ?? [];
+                    if (!reasons.length && !advice.length && !exp.summary) return null;
+                    return (
+                      <div className="p-3 bg-white/5 rounded-xl text-xs space-y-2">
+                        {exp.summary && (
+                          <p className="text-white/80">{exp.summary}</p>
+                        )}
+                        {reasons.length > 0 && (
+                          <div>
+                            <p className="text-green-400 font-medium mb-1">Why it matches:</p>
+                            <ul className="space-y-1">
+                              {reasons.map((r: { skill: string; explanation: string }, i: number) => (
+                                <li key={i} className="text-white/70">
+                                  • <span className="text-white/90">{r.skill}</span> — {r.explanation}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {advice.length > 0 && (
+                          <div>
+                            <p className="text-amber-400 font-medium mb-1">How to close the gap:</p>
+                            <ul className="space-y-1">
+                              {advice.map((a: { skill: string; advice: string }, i: number) => (
+                                <li key={i} className="text-white/70">
+                                  • <span className="text-white/90">{a.skill}</span> — {a.advice}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <SkillGapSection
                     matchedSkills={internship.matchedSkills ?? []}
                     missingSkills={internship.missingSkills ?? []}

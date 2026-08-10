@@ -1,5 +1,4 @@
 from datetime import date, datetime
-from typing import List
 
 from pydantic import BaseModel, ConfigDict
 
@@ -51,12 +50,6 @@ class SkillSimulation(BaseModel):
 class SkillSimulationsResponse(BaseModel):
     current_pct: float
     simulations: list[SkillSimulation]
-
-
-class MatchExplanation(BaseModel):
-    match_reasons: List[str]
-    missing_skills: List[str]
-    tip: str
 
 
 class CategorizedMissingSkills(BaseModel):

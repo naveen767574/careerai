@@ -86,12 +86,10 @@ def run_scraper_if_empty():
 def preload_embedding_model():
     """
     Load the sentence-transformer model into memory at startup.
-
     WHY: The model loads from disk on its first use (~15-20s).
     Without this, the first user after every server restart waits 20s
     for their request to complete while the model loads.
     With this, the model is ready before any request arrives.
-
     Also pre-warms the embedding cache with the most common tech skills
     so the first few real requests skip even more model calls.
     """

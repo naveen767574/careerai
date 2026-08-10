@@ -492,6 +492,9 @@ async def match_insights(
         matched_skills=rec.matched_skills or [],
         missing_skills=rec.missing_skills or [],
         match_percentage=rec.match_percentage or 0.0,
+        db=db,
+        user_id=user.id,
+        internship_id=internship_id,
     )
 
     # Phase 0: record that the user opened the match insights for this role.

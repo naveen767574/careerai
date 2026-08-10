@@ -60,10 +60,26 @@ export const internshipService = {
     const res = await api.get(`/internships/${id}`);
     return res.data;
   },
-  async explainMatch(internshipId: string) {
+  async explainMatch(internshipId: string | number) {
     const res = await api.get(`/internships/${internshipId}/explain`);
-    // Returns: { match_reasons: string[], missing_skills: string[], tip: string }
-    return res.data;
+    // Phase 3 grounded explanation. Every skill named inside `explanation` is
+    // guaranteed to be a member of matched_skills / missing_skills — the backend
+    // discards any LLM output that references anything else.
+    return res.data as {
+      internship_id: number;
+      title: string | null;
+      company: string | null;
+      match_score: number;
+      match_label: string | null;
+      matched_skills: string[];
+      missing_skills: string[];
+      explanation: {
+        matched_skill_explanations: { skill: string; explanation: string }[];
+        missing_skill_advice: { skill: string; advice: string }[];
+        summary: string;
+      };
+      source: 'cache' | 'llm' | 'fallback';
+    };
   },
   async getSkillGap(internshipId: string | number) {
     const res = await api.get(`/internships/${internshipId}/skill-gap`);

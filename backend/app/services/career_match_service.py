@@ -17,8 +17,10 @@ Design:
     the same weighting used at score time.
   • skill_impacts reuse the SAME analytical delta formula as the what-if
     simulations endpoint, so "REST API → +8%" here matches the simulation there.
-  • explanation + recommendation are deterministic templates (no extra LLM cost,
-    no hallucinated skills) but read like a mentor, not a keyword dump.
+  • explanation + match_reasons come from the Phase 3 grounded explanation
+    service (validated + cached, so it can only name real matched/missing
+    skills, and falls back to a deterministic template on any failure).
+  • recommendation is still a deterministic template (no LLM cost).
 
 Pure-ish: only depends on role_stack + recommendation_engine constants. Never
 raises on bad input — returns a safe, fully-populated dict.
@@ -52,23 +54,6 @@ _ROLE_TO_DOMAIN: Dict[str, str] = {
     "GENERAL_ROLE":  "general",
 }
 
-# Short, role-specific phrase describing the KIND OF WORK the role involves.
-# Used to explain WHY the user's matched skills matter — described as TASKS,
-# never as named technologies, so the explanation can never imply the user has
-# a skill they don't. (Explanations reference matched_skills only; this phrase
-# is role context, not a skill claim.)
-_ROLE_CONTEXT: Dict[str, str] = {
-    "ML_ROLE":        "model building and experimentation tasks",
-    "DATA_ROLE":      "data processing and analysis tasks",
-    "FRONTEND_ROLE":  "building responsive, user-facing interfaces",
-    "MOBILE_ROLE":    "building and shipping mobile apps",
-    "DEVOPS_ROLE":    "automation and cloud infrastructure work",
-    "SECURITY_ROLE":  "securing systems and analysing threats",
-    "BACKEND_ROLE":   "server-side and API development work",
-    "FULLSTACK_ROLE": "end-to-end web development work",
-    "GENERAL_ROLE":   "the core engineering work",
-}
-
 # The "path" the recommendation nudges the user to continue on — always
 # role-consistent (a Data role is never told to continue on a "Go Backend"
 # path). Backend-family roles override this with their detected language stack
@@ -88,44 +73,53 @@ _ROLE_PATH: Dict[str, str] = {
 # Backend-family roles whose recommendation path should name the language stack.
 _LANGUAGE_STACK_ROLES = {"BACKEND_ROLE", "FULLSTACK_ROLE", "GENERAL_ROLE"}
 
-# Role -> how a matched skill is FRAMED as helping. One clause per role, used to
-# build per-skill "why you match" bullets that are domain-specific (item #7) and
-# non-generic (item #6/#14). The clause completes: "<Skill> {clause}".
-# Phrased as tasks/outcomes, never inventing a second skill.
-_ROLE_SKILL_HELP: Dict[str, str] = {
-    "ML_ROLE":        "supports the model-building and experimentation work in this role",
-    "DATA_ROLE":      "is used directly for the data processing, analysis and modeling in this role",
-    "FRONTEND_ROLE":  "helps you build the responsive, user-facing interfaces this role needs",
-    "MOBILE_ROLE":    "applies to building and shipping the mobile features this role owns",
-    "DEVOPS_ROLE":    "feeds into the automation and cloud-infrastructure work here",
-    "SECURITY_ROLE":  "applies to securing systems and analysing threats in this role",
-    "BACKEND_ROLE":   "applies to the server logic, APIs and database handling this role owns",
-    "FULLSTACK_ROLE": "applies across the end-to-end web development this role covers",
-    "GENERAL_ROLE":   "is directly useful for the core engineering work in this role",
-}
-
-# A few well-known skills get a MORE specific clause than the role default, so a
-# bullet reads like a mentor, not a template. Keyed by normalized skill name.
-# Still references ONLY the matched skill — the clause never names another skill.
-_SKILL_SPECIFIC_HELP: Dict[str, str] = {
-    "python":     "is the primary language for this role's day-to-day work",
-    "sql":        "lets you query and shape the data this role depends on",
-    "pandas":     "is used to clean, transform and explore datasets here",
-    "numpy":      "underpins the numerical work this role involves",
-    "react":      "is the framework you'd build this role's UI in",
-    "docker":     "is how this role packages and ships services",
-    "aws":        "covers the cloud environment this role deploys to",
-    "git":        "keeps your work reviewable in this role's collaboration flow",
-    "rest api":   "is how this role's services talk to each other",
-    "tensorflow": "is a core framework for this role's model work",
-    "pytorch":    "is a core framework for this role's model work",
-}
-
 # MatchScoringAgent component weights — kept in sync with
 # routes/internships.py::skill_gap_simulations so impacts agree across surfaces.
 # match_percentage is now weighted skill COVERAGE × 100, so the impact of adding
 # one skill is simply its share of the total required weight.
 _W_COVERAGE = 1.0
+
+
+def _grounded_explanation(
+    *,
+    db: Any,
+    user_id: Any,
+    internship_id: Any,
+    title: str,
+    matched_skills: List[str],
+    missing_skills: List[str],
+    match_percentage: float,
+):
+    """
+    Fetch the grounded explanation for this match. Returns
+    (ExplanationOutput, source).
+
+    Imported lazily to keep this module importable without a DB session, and to
+    avoid a circular import at module load. With no db/user_id/internship_id we
+    go straight to the service's deterministic fallback — no LLM call, no cache
+    lookup — so callers that only want the numeric insight bundle pay nothing.
+    """
+    from app.services.explanation_service import build_fallback, generate_explanation
+
+    if db is None or user_id is None or internship_id is None:
+        return build_fallback(matched_skills, missing_skills), "fallback"
+
+    class _Job:
+        id = internship_id
+
+    _Job.title = title
+
+    try:
+        return generate_explanation(
+            db=db,
+            user_id=user_id,
+            job=_Job(),
+            matched_skills=matched_skills,
+            missing_skills=missing_skills,
+            score=match_percentage,
+        )
+    except Exception:  # noqa: BLE001 — this module must never raise
+        return build_fallback(matched_skills, missing_skills), "fallback"
 
 
 def _weighted_impact(
@@ -182,9 +176,18 @@ def build_match_insights(
     matched_skills: List[str],
     missing_skills: List[str],
     match_percentage: float,
+    db: Any = None,
+    user_id: Any = None,
+    internship_id: Any = None,
 ) -> Dict[str, Any]:
     """
     Assemble the full role-aware insight bundle. Never raises.
+
+    `explanation` and `match_reasons` come from the Phase 3 grounded
+    explanation service when a db session + ids are supplied; that path is
+    cached and validated so it can only reference real matched/missing skills.
+    Without a session (or on any failure) the service's own deterministic
+    fallback supplies them, so this function still never raises.
     """
     title = title or ""
     matched_skills = [_normalize(s) for s in (matched_skills or []) if s]
@@ -246,34 +249,35 @@ def build_match_insights(
 
     top_missing_skill = impacts[0]["skill"] if impacts else ""
 
-    # --- Human-like explanation ("why you match") -----------------------------
-    # STRICT: everything here references ONLY the user's actual matched_skills.
-    # We never name a skill the user doesn't have.
-    #
-    # match_reasons: one bullet PER real matched skill (item #14) — each explains
-    # HOW that specific skill helps in THIS role (role-aware, item #6/#7), using a
-    # skill-specific clause when we have one, else the role default.
+    # --- Grounded explanation ("why you match") --------------------------------
+    # Delegated to the Phase 3 explanation service. That layer is validated:
+    # every skill it names must be a member of matched_skills / missing_skills,
+    # or its output is discarded in favour of a deterministic fallback. So this
+    # still never names a skill the user doesn't have.
     matched_labels = [_titlecase_skill(s) for s in matched_skills]
-    role_context = _ROLE_CONTEXT.get(role_type, "the core requirements of this role")
-    role_help = _ROLE_SKILL_HELP.get(role_type, "is relevant to the core work in this role")
 
-    match_reasons: List[str] = []
-    for raw, label in zip(matched_skills, matched_labels):
-        clause = _SKILL_SPECIFIC_HELP.get(raw, role_help)
-        match_reasons.append(f"{label} {clause}.")
+    grounded, _source = _grounded_explanation(
+        db=db,
+        user_id=user_id,
+        internship_id=internship_id,
+        title=title,
+        matched_skills=matched_skills,
+        missing_skills=missing_skills,
+        match_percentage=match_percentage,
+    )
 
-    if matched_labels:
-        top_matched = _join_human(matched_labels[:3])
-        verb = "helps" if len(matched_labels[:3]) == 1 else "help"
-        explanation = (
-            f"You match this {role_label} role because your experience with "
-            f"{top_matched} {verb} with the {role_context} required for this position."
-        )
-    else:
-        explanation = (
-            f"This {role_label} role centers on {role_context}. Your profile "
-            f"doesn't show those skills yet, so building them is the fastest way in."
-        )
+    # One bullet PER real matched skill, straight from the grounded output.
+    # The service returns a self-contained sentence per skill, so we emit it
+    # as-is rather than prefixing the label (which would read "Python You have
+    # experience in python."). Only the trailing period is normalized.
+    match_reasons: List[str] = [
+        item.explanation if item.explanation.endswith((".", "!", "?"))
+        else f"{item.explanation}."
+        for item in grounded.matched_skill_explanations
+        if item.explanation
+    ]
+
+    explanation = grounded.summary
 
     # --- Mentor-style recommendation ------------------------------------------
     # Depends on role_type + matched_skills. The "path" it nudges toward is

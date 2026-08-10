@@ -1,10 +1,8 @@
-import json
 import logging
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
-from pydantic import BaseModel, ValidationError
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -51,16 +49,6 @@ class InternshipRecommendation:
     # Composite score (semantic/domain/behavior richness) used ONLY for ranking.
     # Never displayed — match_percentage is the honest weighted-coverage number.
     ranking_score: float = 0.0
-
-
-# ---------------------------------------------------------------------------
-# Pydantic schema for LLM explanation output — validates before we trust it
-# ---------------------------------------------------------------------------
-
-class ExplanationOutput(BaseModel):
-    match_reasons: List[str]
-    missing_skills: List[str]
-    tip: str
 
 
 # ---------------------------------------------------------------------------
@@ -509,171 +497,6 @@ class MatchScoringAgent:
         return max(0.0, min(1.0, float(value)))
 
 
-# ---------------------------------------------------------------------------
-# FIX 4: ExplanationAgent — replaces the standalone explain_match() function
-#
-# WHY: The old function was a loose function with no fallback strategy,
-# wrong temperature for JSON output, and manual markdown stripping.
-# This class has: correct temperature, Pydantic validation, tiered fallback.
-# ---------------------------------------------------------------------------
-
-class ExplanationAgent:
-    """
-    Generates a human-readable explanation for a match.
-    Uses Groq LLaMA. Falls back gracefully if LLM fails.
-    """
-
-    _SYSTEM_PROMPT = """You are a concise, practical career advisor.
-
-RULES (follow all of them):
-1. Use ONLY the data provided — do not invent skills or tools.
-2. Write like a helpful mentor, not a machine. No robotic phrases.
-3. Avoid: "matches requirement", "aligns with role", "this skill is relevant".
-4. For match_reasons: explain WHY the skill matters in this specific role.
-   BAD: "Python matches the role"
-   GOOD: "Your Python experience helps you handle the backend scripting this role needs"
-5. For missing_skills: expand generic terms slightly but stay within the given inputs.
-   e.g. "api" → "building REST APIs with FastAPI or Flask"
-6. tip must be specific and actionable based ONLY on the missing skills.
-   e.g. "Build a REST API with FastAPI and connect it to a PostgreSQL database"
-7. Keep match_reasons to max 3 items, each under 15 words.
-
-Return ONLY valid JSON, no markdown fences:
-{
-  "match_reasons": ["...", "...", "..."],
-  "missing_skills": ["...", "..."],
-  "tip": "..."
-}"""
-
-    def __init__(self):
-        self._client = None  # lazy-init so import errors don't crash startup
-
-    def _get_client(self):
-        if self._client is None:
-            from groq import Groq
-            from app.config import settings
-            self._client = Groq(api_key=settings.GROQ_API_KEY)
-        return self._client
-
-    def explain(
-        self,
-        internship_title: str,
-        internship_company: str,
-        user_skills: str,
-        matched_skills: List[str],
-        missing_skills: List[str],
-        user_experience: str = "",
-        user_projects: str = "",
-    ) -> Dict[str, Any]:
-        """
-        Returns a dict with keys: match_reasons, missing_skills, tip.
-        Never raises — always returns a valid dict.
-        """
-        try:
-            return self._call_llm(
-                internship_title, internship_company,
-                user_skills, matched_skills, missing_skills,
-                user_experience, user_projects,
-            )
-        except Exception as exc:
-            logger.error("explanation_agent.llm_failed error=%s", exc)
-            return self._rule_based_fallback(matched_skills, missing_skills)
-
-    def _call_llm(
-        self,
-        internship_title: str,
-        internship_company: str,
-        user_skills: str,
-        matched_skills: List[str],
-        missing_skills: List[str],
-        user_experience: str,
-        user_projects: str,
-    ) -> Dict[str, Any]:
-        client = self._get_client()
-
-        user_message = (
-            f"Internship: {internship_title} at {internship_company}\n"
-            f"User skills: {user_skills}\n"
-            f"User experience: {user_experience}\n"
-            f"User projects: {user_projects}\n"
-            f"Matched: {', '.join(matched_skills) if matched_skills else 'None'}\n"
-            f"Missing: {', '.join(missing_skills) if missing_skills else 'None'}"
-        )
-
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[
-                {"role": "system", "content": self._SYSTEM_PROMPT},
-                {"role": "user",   "content": user_message},
-            ],
-            temperature=0.1,          # FIX: was 0.7 — low temp for stable JSON
-            max_tokens=400,
-            response_format={"type": "json_object"},
-        )
-
-        raw = response.choices[0].message.content.strip()
-        logger.info("explanation_agent.raw_response length=%d", len(raw))
-
-        # FIX: use Pydantic validation instead of manual JSON parsing
-        parsed = self._parse_and_validate(raw)
-        return parsed
-
-    def _parse_and_validate(self, raw: str) -> Dict[str, Any]:
-        """Parse LLM output safely. Strips fences if model ignores response_format."""
-        # Strip markdown fences if present (defensive — shouldn't happen with json_object)
-        clean = raw
-        if "```" in clean:
-            parts = clean.split("```")
-            # Take the part after the first fence
-            clean = parts[1] if len(parts) > 1 else parts[0]
-            if clean.startswith("json"):
-                clean = clean[4:]
-            clean = clean.strip()
-
-        # Find JSON boundaries
-        start, end = clean.find("{"), clean.rfind("}") + 1
-        if start != -1 and end > start:
-            clean = clean[start:end]
-
-        try:
-            data = json.loads(clean)
-            # Validate with Pydantic — raises ValidationError if schema is wrong
-            validated = ExplanationOutput(**data)
-            return {
-                "match_reasons": validated.match_reasons[:3],
-                "missing_skills": validated.missing_skills[:3],
-                "tip": validated.tip,
-            }
-        except (json.JSONDecodeError, ValidationError) as exc:
-            logger.warning("explanation_agent.parse_failed error=%s raw=%s", exc, raw[:200])
-            raise  # let explain() catch this and use fallback
-
-    def _rule_based_fallback(
-        self, matched_skills: List[str], missing_skills: List[str]
-    ) -> Dict[str, Any]:
-        """Deterministic fallback when LLM is unavailable."""
-        reasons = []
-        if matched_skills:
-            reasons.append(f"Your {matched_skills[0]} knowledge is directly applicable here")
-        if len(matched_skills) > 1:
-            reasons.append(f"You already have {len(matched_skills)} of the required skills")
-        if not reasons:
-            reasons.append("Your profile partially aligns with this role's requirements")
-
-        tip = (
-            f"Focus on building experience with {missing_skills[0]} to strengthen this match"
-            if missing_skills
-            else "Tailor your resume to highlight the skills listed in this internship"
-        )
-
-        return {
-            "match_reasons": reasons,
-            "missing_skills": missing_skills[:3],
-            "tip": tip,
-        }
-
-
-# ---------------------------------------------------------------------------
 # FIX 5: match_label — derived from score, not hardcoded
 # ---------------------------------------------------------------------------
 
@@ -1028,7 +851,6 @@ class RecommendationEngine:
         self.db              = db
         self.scoring_agent   = MatchScoringAgent()
         self.job_agent       = JobAnalysisAgent()
-        self.explanation_agent = ExplanationAgent()
 
     def get_recommendations(
         self, user_id: int, limit: int = 20
@@ -1444,34 +1266,3 @@ class RecommendationEngine:
 
         internship_ids = [row.id for row in result if row.id is not None]
         return self.db.query(Internship).filter(Internship.id.in_(internship_ids)).all()
-
-
-# ---------------------------------------------------------------------------
-# explain_match() — kept as a module-level function for backward compatibility
-# with any router/endpoint that already calls it by name.
-# Internally it now delegates to ExplanationAgent.
-# ---------------------------------------------------------------------------
-
-_explanation_agent = ExplanationAgent()
-
-def explain_match(
-    internship_title: str,
-    internship_company: str,
-    user_skills: str,
-    matched_skills: list,
-    missing_skills: list,
-    user_experience: str = "",
-    user_projects: str = "",
-) -> dict:
-    """
-    Backward-compatible wrapper. Existing callers don't need to change.
-    """
-    return _explanation_agent.explain(
-        internship_title=internship_title,
-        internship_company=internship_company,
-        user_skills=user_skills,
-        matched_skills=matched_skills,
-        missing_skills=missing_skills,
-        user_experience=user_experience,
-        user_projects=user_projects,
-    )
