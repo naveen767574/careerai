@@ -69,3 +69,5 @@ test.ipynb
 
 # DB backup (large file, not needed in repo)
 career_ai_backup.sql
+
+*.claude/
